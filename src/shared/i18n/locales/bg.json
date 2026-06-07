@@ -1,0 +1,71 @@
+{
+  "actions": {
+    "changeLanguage": "Change language",
+    "toggleNavigation": "Toggle navigation"
+  },
+  "app": {
+    "stage": "MVP development stage",
+    "subtitle": "Logistics marketplace"
+  },
+  "auth": {
+    "login": {
+      "body": "Sign in to manage company logistics, marketplace work, fleet operations, and billing from one role-aware workspace.",
+      "eyebrow": "Secure access",
+      "formTitle": "Sign in",
+      "submit": "Continue",
+      "title": "A calmer way to run freight operations."
+    }
+  },
+  "billing": {
+    "body": "Stripe sandbox checkout and portal flows will connect here once backend sandbox keys are ready.",
+    "checkout": "Start sandbox checkout",
+    "title": "Billing and subscription"
+  },
+  "dashboard": {
+    "eyebrow": "Company command center",
+    "heroBody": "This first frontend pass is built for company admins and drivers, with navigation mapped to the backend modules that already exist.",
+    "heroTitle": "Run posts, bids, contracts, fleet, and billing from one unified app.",
+    "mvpReadiness": "Frontend build priorities",
+    "primaryAction": "Create transport post",
+    "readiness": {
+      "auth": "Wizard registration and OTP screens",
+      "billing": "Stripe sandbox checkout wiring",
+      "localization": "Nine-language localization foundation",
+      "marketplace": "Company admin and driver marketplace flows"
+    },
+    "secondaryAction": "Review backend contracts",
+    "stats": {
+      "contracts": "Active contracts",
+      "fleet": "Fleet assets",
+      "partial": "Partial",
+      "release": "Backend release status",
+      "team": "Team members"
+    },
+    "title": "Dashboard"
+  },
+  "fields": {
+    "email": "Email",
+    "password": "Password"
+  },
+  "nav": {
+    "billing": "Billing",
+    "company": "Company",
+    "contracts": "Contracts",
+    "dashboard": "Dashboard",
+    "documents": "Documents",
+    "fleet": "Fleet",
+    "notifications": "Notifications",
+    "posts": "Posts",
+    "routes": "Routes",
+    "team": "Team"
+  },
+  "registration": {
+    "body": "The frontend will follow the backend registration wizard: start registration, verify OTP, then complete the selected profile.",
+    "companyBody": "Create a company tenant, admin profile, and subscription-ready workspace.",
+    "companyTitle": "Register company",
+    "eyebrow": "Registration wizard",
+    "seekerBody": "Create an independent job seeker profile for the job marketplace lane.",
+    "seekerTitle": "Register job seeker",
+    "title": "Choose how you want to join Cargo Agent."
+  }
+}

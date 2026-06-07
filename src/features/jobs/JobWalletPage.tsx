@@ -1,0 +1,144 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { CreditCard, WalletCards } from "lucide-react";
+import {
+  createJobSeekerCheckoutSession,
+  getJobSeekerUsage,
+  getJobSeekerWallet,
+  listJobSeekerCreditPacks,
+  listJobSeekerTransactions,
+} from "@/shared/api/modules/jobSeekerBilling";
+import { Button } from "@/shared/components/ui/Button";
+import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
+import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
+import { useAppMutation } from "@/shared/hooks/useAppMutation";
+import { humanizeEnum } from "@/shared/lib/formatters";
+import { useAuthStore } from "@/features/auth/authStore";
+
+function idempotencyKey(packCode: string) {
+  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}`;
+  return `job-wallet-${packCode}-${suffix}`;
+}
+
+export function JobWalletPage() {
+  const queryClient = useQueryClient();
+  const user = useAuthStore((state) => state.user);
+  const walletQuery = useQuery({ enabled: user?.role === "JOB_SEEKER", queryFn: getJobSeekerWallet, queryKey: ["job-seeker-billing", "wallet"] });
+  const usageQuery = useQuery({ enabled: user?.role === "JOB_SEEKER", queryFn: getJobSeekerUsage, queryKey: ["job-seeker-billing", "usage"] });
+  const packsQuery = useQuery({ queryFn: () => listJobSeekerCreditPacks({ activeOnly: true }), queryKey: ["job-seeker-billing", "packs"] });
+  const transactionsQuery = useQuery({
+    enabled: user?.role === "JOB_SEEKER",
+    queryFn: () => listJobSeekerTransactions({ page: 1, pageSize: 20 }),
+    queryKey: ["job-seeker-billing", "transactions"],
+  });
+  const checkoutMutation = useAppMutation({
+    messages: { success: "Checkout session created" },
+    mutationFn: createJobSeekerCheckoutSession,
+    onSuccess: (session) => {
+      void queryClient.invalidateQueries({ queryKey: ["job-seeker-billing"] });
+      if (session.checkoutUrl) window.location.assign(session.checkoutUrl);
+    },
+  });
+
+  if (user?.role !== "JOB_SEEKER") {
+    return <ErrorState description="The job wallet is available to job seekers only." title="Job seeker wallet" />;
+  }
+
+  if (walletQuery.isLoading || usageQuery.isLoading || packsQuery.isLoading || transactionsQuery.isLoading) {
+    return <LoadingState description="Loading wallet balance, usage quota, credit packs, and transaction history." title="Loading job wallet" />;
+  }
+
+  const error = walletQuery.error ?? usageQuery.error ?? packsQuery.error ?? transactionsQuery.error;
+  if (error) {
+    return <ErrorState description="The job seeker wallet could not be loaded." error={error} title="Unable to load wallet" />;
+  }
+
+  const wallet = walletQuery.data;
+  const usage = usageQuery.data;
+  const packs = packsQuery.data ?? [];
+  const transactions = transactionsQuery.data ?? [];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Job seeker billing"
+        subtitle="Track free quota, credit balance, credit packs, and promotion or application spend."
+        title="Job wallet"
+      />
+
+      <section className="grid gap-4 lg:grid-cols-3">
+        <Surface>
+          <WalletCards className="size-5 text-primary" aria-hidden="true" />
+          <h2 className="mt-3 text-xl font-semibold">{wallet?.balanceCredits ?? 0} credits</h2>
+          <p className="mt-1 text-sm text-muted">Available wallet balance</p>
+        </Surface>
+        <Surface>
+          <CreditCard className="size-5 text-primary" aria-hidden="true" />
+          <h2 className="mt-3 text-xl font-semibold">{usage?.quotas.applications.remaining ?? 0} free applies</h2>
+          <p className="mt-1 text-sm text-muted">{usage?.quotas.applications.used ?? 0} of {usage?.quotas.applications.limit ?? 0} used this month</p>
+        </Surface>
+        <Surface>
+          <CreditCard className="size-5 text-primary" aria-hidden="true" />
+          <h2 className="mt-3 text-xl font-semibold">{usage?.quotas.activeListings.remaining ?? 0} free listings</h2>
+          <p className="mt-1 text-sm text-muted">{usage?.quotas.activeListings.used ?? 0} of {usage?.quotas.activeListings.limit ?? 0} active listing quota used</p>
+        </Surface>
+      </section>
+
+      <Surface>
+        <h2 className="text-xl font-semibold">Credit packs</h2>
+        {packs.length === 0 ? (
+          <p className="mt-3 text-sm text-muted">No active credit packs are available.</p>
+        ) : (
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {packs.map((pack) => (
+              <div className="rounded-lg border border-border bg-surface-pearl p-4" key={pack.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold">{pack.name}</h3>
+                    <p className="mt-1 text-sm text-muted">{pack.description ?? `${pack.credits} job marketplace credits`}</p>
+                  </div>
+                  <StatusBadge tone={pack.isActive ? "success" : "warning"}>{pack.isActive ? "Active" : "Inactive"}</StatusBadge>
+                </div>
+                <p className="mt-4 text-lg font-semibold">{pack.priceAmount} {pack.currency}</p>
+                <Button
+                  className="mt-4 w-full"
+                  disabled={checkoutMutation.isPending || !pack.isActive}
+                  onClick={() => checkoutMutation.mutate({ creditPackCode: pack.code, idempotencyKey: idempotencyKey(pack.code) })}
+                  type="button"
+                >
+                  Buy credits
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Surface>
+
+      {transactions.length === 0 ? (
+        <EmptyState description="Credit purchases, spends, refunds, and adjustments will appear here." title="No transactions yet" />
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Type</Th>
+              <Th>Amount</Th>
+              <Th>Balance after</Th>
+              <Th>Reason</Th>
+              <Th>Date</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {transactions.map((transaction) => (
+              <tr key={transaction.id}>
+                <Td>{humanizeEnum(transaction.type)}</Td>
+                <Td>{transaction.amountCredits}</Td>
+                <Td>{transaction.balanceAfter}</Td>
+                <Td>{humanizeEnum(transaction.reasonCode)}</Td>
+                <Td>{transaction.createdAt.slice(0, 10)}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,124 @@
+import { apiClient, unwrapData } from "@/shared/api/apiClient";
+import type { AuthUser } from "@/shared/types/auth";
+
+export type LoginInput = {
+  email: string;
+  password: string;
+};
+
+export type LoginResponse =
+  | { user: AuthUser }
+  | {
+      challengeId: string;
+      expiresAt: string;
+      nextAction: { purpose: "LOGIN_MFA"; type: "MFA_REQUIRED" };
+      user: AuthUser;
+    };
+
+export type RegistrationStartInput = {
+  email: string;
+  firstName: string;
+  kind: "COMPANY";
+  lastName: string;
+  password: string;
+  phone?: string;
+};
+
+export type RegistrationStartResponse = {
+  challengeId: string;
+  draftId: string;
+  expiresAt: string;
+  nextAction: { purpose: "REGISTER_VERIFY"; type: "VERIFY_OTP" };
+};
+
+export type OtpPurpose = "REGISTER_VERIFY" | "FORGOT_PASSWORD" | "INVITE_ACCEPT" | "CHANGE_PASSWORD" | "LOGIN_MFA";
+export type OtpChannel = "EMAIL" | "SMS";
+
+export type OtpChallengeResponse = {
+  accepted: true;
+  challengeId: string;
+  code?: string;
+  expiresAt: string;
+  nextAction: { purpose?: OtpPurpose; type: string };
+};
+
+export type RequestOtpInput = {
+  channel: OtpChannel;
+  email?: string;
+  phone?: string;
+  purpose: OtpPurpose;
+};
+
+export type RegisterInput = {
+  email: string;
+  firstName: string;
+  lastName: string;
+  otpChallengeId: string;
+  password: string;
+  role?: "JOB_SEEKER";
+};
+
+export type CompleteCompanyRegistrationInput = {
+  address: string;
+  city: string;
+  companyEmail?: string;
+  companyName: string;
+  companyType: "SHIPPER" | "CARRIER" | "BOTH";
+  contactPhone?: string;
+  countryCode: string;
+  draftId: string;
+  planCode?: "FREE" | "PRO";
+  registrationNumber: string;
+  vatNumber?: string;
+  website?: string;
+};
+
+export function login(input: LoginInput) {
+  return unwrapData<LoginResponse>(apiClient.post("/auth/login", input));
+}
+
+export function loginVerifyOtp(input: LoginInput & { otpChallengeId: string }) {
+  return unwrapData<{ user: AuthUser }>(apiClient.post("/auth/login/verify-otp", input));
+}
+
+export function register(input: RegisterInput) {
+  return unwrapData<{ user: AuthUser }>(apiClient.post("/auth/register", input));
+}
+
+export function refreshSession() {
+  return unwrapData<{ message: string }>(apiClient.post("/auth/refresh", {}));
+}
+
+export function logout() {
+  return unwrapData<{ message: string }>(apiClient.post("/auth/logout", {}));
+}
+
+export function startCompanyRegistration(input: RegistrationStartInput) {
+  return unwrapData<RegistrationStartResponse>(apiClient.post("/auth/registration/start", input));
+}
+
+export function verifyRegistrationOtp(input: { code: string; draftId: string }) {
+  return unwrapData<{ draftId: string; kind: "COMPANY"; nextAction: { type: string }; otpVerified: true }>(
+    apiClient.post("/auth/registration/verify-otp", input),
+  );
+}
+
+export function requestOtp(input: RequestOtpInput) {
+  return unwrapData<OtpChallengeResponse>(apiClient.post("/auth/otp/request", input));
+}
+
+export function verifyOtp(input: { challengeId: string; code: string }) {
+  return unwrapData<{ challengeId: string; channel: string; nextAction: { type: string }; purpose: string }>(
+    apiClient.post("/auth/otp/verify", input),
+  );
+}
+
+export function resendOtp(input: { challengeId: string }) {
+  return unwrapData<OtpChallengeResponse>(apiClient.post("/auth/otp/resend", input));
+}
+
+export function completeCompanyRegistration(input: CompleteCompanyRegistrationInput) {
+  return unwrapData<{ checkout: null | { checkoutUrl?: string }; company: unknown; user: AuthUser }>(
+    apiClient.post("/auth/registration/complete-company", input),
+  );
+}
