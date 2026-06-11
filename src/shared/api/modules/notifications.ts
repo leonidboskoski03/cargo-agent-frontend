@@ -1,11 +1,24 @@
 import { apiClient, unwrapData } from "@/shared/api/apiClient";
 
+export type NotificationType =
+  | "BID_SUBMITTED"
+  | "BID_ACCEPTED"
+  | "BID_REJECTED"
+  | "CONTRACT_CREATED"
+  | "CONTRACT_STATUS_CHANGED"
+  | "REVIEW_PUBLISHED"
+  | "VEHICLE_MARKETPLACE_INQUIRY_CREATED"
+  | "VEHICLE_MARKETPLACE_INQUIRY_RESPONDED"
+  | "JOB_APPLICATION_SUBMITTED";
+
 export type NotificationRecord = {
   body: string;
   createdAt: string;
   id: string;
   isRead: boolean;
+  payloadJson?: unknown;
   title: string;
+  type: NotificationType;
 };
 
 export type NotificationsQuery = {

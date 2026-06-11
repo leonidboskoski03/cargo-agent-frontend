@@ -1,7 +1,16 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BriefcaseBusiness, Filter, Plus, Sparkles } from "lucide-react";
+import { BriefcaseBusiness, Filter, Pencil, Plus, RotateCcw, Save, Sparkles, Trash2, X } from "lucide-react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { listJobApplications, listMyJobApplications, promoteJobApplication } from "@/shared/api/modules/jobApplications";
+import {
+  deleteJobApplication,
+  listJobApplications,
+  listMyJobApplications,
+  promoteJobApplication,
+  restoreJobApplication,
+  updateJobApplication,
+  type JobApplicationRecord,
+} from "@/shared/api/modules/jobApplications";
 import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
 import { Field, Input, Select } from "@/shared/components/ui/Form";
@@ -19,6 +28,8 @@ export function JobsPage({ scope = "feed" }: JobsPageProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
+  const [editingJobId, setEditingJobId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ description: "", expectedPayAmount: "", preferredCity: "", preferredCountryCode: "", title: "" });
   const isMine = scope === "mine";
   const query = useQuery({
     queryFn: isMine ? listMyJobApplications : () => listJobApplications(),
@@ -41,6 +52,47 @@ export function JobsPage({ scope = "feed" }: JobsPageProps) {
       void queryClient.invalidateQueries({ queryKey: ["job-applications"] });
     },
   });
+  const updateMutation = useAppMutation({
+    messages: { success: "Job listing updated" },
+    mutationFn: ({ id, values }: { id: string; values: typeof editForm }) =>
+      updateJobApplication(id, {
+        description: values.description.trim() || null,
+        expectedPayAmount: values.expectedPayAmount ? Number(values.expectedPayAmount) : null,
+        preferredCity: values.preferredCity.trim() || null,
+        preferredCountryCode: values.preferredCountryCode.trim() ? values.preferredCountryCode.trim().toUpperCase() : null,
+        title: values.title.trim(),
+      }),
+    onSuccess: () => {
+      setEditingJobId(null);
+      void queryClient.invalidateQueries({ queryKey: ["job-applications"] });
+    },
+  });
+  const statusMutation = useAppMutation({
+    messages: { success: "Job listing status updated" },
+    mutationFn: ({ id, status }: { id: string; status: "OPEN" | "PAUSED" | "CLOSED" }) => updateJobApplication(id, { status }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["job-applications"] }),
+  });
+  const deleteMutation = useAppMutation({
+    messages: { success: "Job listing deleted" },
+    mutationFn: deleteJobApplication,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["job-applications"] }),
+  });
+  const restoreMutation = useAppMutation({
+    messages: { success: "Job listing restored" },
+    mutationFn: restoreJobApplication,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["job-applications"] }),
+  });
+
+  const startEdit = (job: JobApplicationRecord) => {
+    setEditingJobId(job.id);
+    setEditForm({
+      description: job.description ?? "",
+      expectedPayAmount: job.expectedPayAmount ? String(job.expectedPayAmount) : "",
+      preferredCity: job.preferredCity ?? "",
+      preferredCountryCode: job.preferredCountryCode ?? "",
+      title: job.title,
+    });
+  };
 
   const updateFilter = (key: "q" | "status", value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -114,28 +166,96 @@ export function JobsPage({ scope = "feed" }: JobsPageProps) {
           <tbody>
             {filteredJobs.map((job) => {
               const ownsJob = job.createdByUserId === user?.id;
+              const isEditing = editingJobId === job.id;
               return (
                 <tr key={job.id}>
                   <Td>
-                    <Link className="font-semibold text-primary" to={`/jobs/${job.id}`}>
-                      {job.title}
-                    </Link>
-                    <p className="mt-1 line-clamp-2 text-xs text-muted">{job.description ?? "No description provided."}</p>
+                    {isEditing ? (
+                      <div className="space-y-2">
+                        <Input aria-label="Edit job title" onChange={(event) => setEditForm((current) => ({ ...current, title: event.target.value }))} value={editForm.title} />
+                        <Input aria-label="Edit job description" onChange={(event) => setEditForm((current) => ({ ...current, description: event.target.value }))} placeholder="Description" value={editForm.description} />
+                      </div>
+                    ) : (
+                      <>
+                        <Link className="font-semibold text-primary" to={`/jobs/${job.id}`}>
+                          {job.title}
+                        </Link>
+                        <p className="mt-1 line-clamp-2 text-xs text-muted">{job.description ?? "No description provided."}</p>
+                      </>
+                    )}
                     {job.isPromoted ? <p className="mt-1 text-xs font-semibold text-primary">Promoted</p> : null}
+                    {job.deletedAt ? <p className="mt-1 text-xs font-semibold text-danger">Deleted</p> : null}
                   </Td>
                   <Td>{formatJobOwner(job)}</Td>
-                  <Td>{formatJobLocation(job)}</Td>
-                  <Td>{formatJobPay(job)}</Td>
-                  <Td><StatusBadge tone={jobStatusTone(job.status)}>{humanizeEnum(job.status)}</StatusBadge></Td>
+                  <Td>
+                    {isEditing ? (
+                      <div className="grid gap-2">
+                        <Input aria-label="Edit job city" onChange={(event) => setEditForm((current) => ({ ...current, preferredCity: event.target.value }))} placeholder="City" value={editForm.preferredCity} />
+                        <Input aria-label="Edit job country" maxLength={2} onChange={(event) => setEditForm((current) => ({ ...current, preferredCountryCode: event.target.value.toUpperCase() }))} placeholder="MK" value={editForm.preferredCountryCode} />
+                      </div>
+                    ) : formatJobLocation(job)}
+                  </Td>
+                  <Td>
+                    {isEditing ? (
+                      <Input aria-label="Edit expected pay" inputMode="decimal" onChange={(event) => setEditForm((current) => ({ ...current, expectedPayAmount: event.target.value }))} placeholder="Amount" value={editForm.expectedPayAmount} />
+                    ) : formatJobPay(job)}
+                  </Td>
+                  <Td>
+                    {isMine && ownsJob && !job.deletedAt ? (
+                      <Select
+                        className="h-9 min-w-28"
+                        disabled={statusMutation.isPending}
+                        onChange={(event) => statusMutation.mutate({ id: job.id, status: event.target.value as "OPEN" | "PAUSED" | "CLOSED" })}
+                        value={job.status}
+                      >
+                        <option value="OPEN">Open</option>
+                        <option value="PAUSED">Paused</option>
+                        <option value="CLOSED">Closed</option>
+                      </Select>
+                    ) : (
+                      <StatusBadge tone={jobStatusTone(job.status)}>{humanizeEnum(job.status)}</StatusBadge>
+                    )}
+                  </Td>
                   <Td>
                     <div className="flex flex-wrap gap-2">
-                      <Link className="inline-flex min-h-9 items-center rounded-lg border border-primary bg-card px-3 py-1.5 text-sm text-primary" to={`/jobs/${job.id}`}>
-                        Open
-                      </Link>
-                      {ownsJob && user?.role === "JOB_SEEKER" ? (
+                      {isEditing ? (
+                        <>
+                          <Button aria-label={`Save ${job.title}`} className="h-9 min-h-9 px-3" disabled={updateMutation.isPending || editForm.title.trim().length < 3} onClick={() => updateMutation.mutate({ id: job.id, values: editForm })} type="button">
+                            <Save className="size-4" aria-hidden="true" />
+                            Save
+                          </Button>
+                          <Button aria-label={`Cancel editing ${job.title}`} className="h-9 min-h-9 px-3" onClick={() => setEditingJobId(null)} type="button" variant="secondary">
+                            <X className="size-4" aria-hidden="true" />
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <Link className="inline-flex min-h-9 items-center rounded-lg border border-primary bg-card px-3 py-1.5 text-sm text-primary" to={`/jobs/${job.id}`}>
+                          Open
+                        </Link>
+                      )}
+                      {!isEditing && isMine && ownsJob && !job.deletedAt ? (
+                        <Button aria-label={`Edit ${job.title}`} className="h-9 min-h-9 px-3" onClick={() => startEdit(job)} type="button" variant="secondary">
+                          <Pencil className="size-4" aria-hidden="true" />
+                          Edit
+                        </Button>
+                      ) : null}
+                      {!isEditing && ownsJob && user?.role === "JOB_SEEKER" && !job.deletedAt ? (
                         <Button className="h-9 min-h-9 px-3" disabled={promoteMutation.isPending} onClick={() => promoteMutation.mutate(job.id)} type="button" variant="secondary">
                           <Sparkles className="size-4" aria-hidden="true" />
                           Promote
+                        </Button>
+                      ) : null}
+                      {!isEditing && isMine && ownsJob && !job.deletedAt ? (
+                        <Button aria-label={`Delete ${job.title}`} className="h-9 min-h-9 px-3" disabled={deleteMutation.isPending} onClick={() => window.confirm("Delete this job listing? It will be hidden from the public job feed.") && deleteMutation.mutate(job.id)} type="button" variant="danger">
+                          <Trash2 className="size-4" aria-hidden="true" />
+                          Delete
+                        </Button>
+                      ) : null}
+                      {!isEditing && isMine && ownsJob && job.deletedAt ? (
+                        <Button aria-label={`Restore ${job.title}`} className="h-9 min-h-9 px-3" disabled={restoreMutation.isPending} onClick={() => restoreMutation.mutate(job.id)} type="button" variant="secondary">
+                          <RotateCcw className="size-4" aria-hidden="true" />
+                          Restore
                         </Button>
                       ) : null}
                     </div>

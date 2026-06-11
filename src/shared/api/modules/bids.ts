@@ -1,8 +1,50 @@
 import { apiClient, unwrapData } from "@/shared/api/apiClient";
 
 export type BidStatus = "PENDING" | "ACCEPTED" | "REJECTED" | "WITHDRAWN";
+export type BidScope = "received" | "sent" | "all";
+export type BidActivityType =
+  | "CREATED"
+  | "UPDATED"
+  | "ACCEPTED"
+  | "REJECTED"
+  | "WITHDRAWN"
+  | "DELETED"
+  | "RESTORED"
+  | "BOOSTED"
+  | "CONTRACT_CREATED";
+
+type CompanySummary = {
+  city?: string | null;
+  countryCode?: string | null;
+  id: string;
+  isVerified?: boolean;
+  name: string;
+};
+
+type RouteSummary = {
+  destinationLocation: {
+    city: string;
+    countryCode: string;
+    id: string;
+  };
+  distanceKm?: number | null;
+  estimatedDurationMinutes?: number | null;
+  id: string;
+  originLocation: {
+    city: string;
+    countryCode: string;
+    id: string;
+  };
+};
 
 export type BidRecord = {
+  billing?: {
+    creditCost: number;
+    mode: "CREDITS";
+    walletBalanceCredits: number;
+  };
+  boostCredits?: number;
+  boostedUntil?: string | null;
   carrierCompanyId: string;
   createdAt: string;
   createdByUserId: string;
@@ -14,17 +56,38 @@ export type BidRecord = {
   message?: string | null;
   offeredPriceAmount?: string | null;
   post: {
+    cargoDescription?: string | null;
+    company?: CompanySummary;
     companyId: string;
     currency: string;
     deletedAt: string | null;
     id: string;
+    priceAmount?: string | null;
     priceType: string;
+    route?: RouteSummary;
     routeId: string;
     status: string;
+    title?: string | null;
   };
   postId: string;
+  carrierCompany?: CompanySummary;
+  contract?: {
+    id: string;
+    status: string;
+  } | null;
   status: BidStatus;
   updatedAt: string;
+};
+
+export type BidActivityRecord = {
+  actorCompanyId?: string | null;
+  actorUserId?: string | null;
+  bidId: string;
+  createdAt: string;
+  id: string;
+  message?: string | null;
+  metadataJson?: Record<string, unknown> | null;
+  type: BidActivityType;
 };
 
 export type CreateBidInput = {
@@ -36,8 +99,12 @@ export type CreateBidInput = {
   postId: string;
 };
 
-export function listBids(params?: { postId?: string; status?: BidStatus }) {
+export function listBids(params?: { postId?: string; scope?: BidScope; status?: BidStatus }) {
   return unwrapData<BidRecord[]>(apiClient.get("/bids", { params }));
+}
+
+export function listBidActivities(bidId: string) {
+  return unwrapData<BidActivityRecord[]>(apiClient.get(`/bids/${bidId}/activities`));
 }
 
 export function createBid(input: CreateBidInput) {
@@ -50,6 +117,10 @@ export function updateBid(bidId: string, input: Partial<Omit<CreateBidInput, "po
 
 export function changeBidStatus(bidId: string, status: BidStatus) {
   return unwrapData<BidRecord>(apiClient.patch(`/bids/${bidId}/status`, { status }));
+}
+
+export function boostBid(bidId: string, creditAmount: number) {
+  return unwrapData<BidRecord>(apiClient.post(`/bids/${bidId}/boost`, { creditAmount }));
 }
 
 export function deleteBid(bidId: string) {

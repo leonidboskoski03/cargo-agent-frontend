@@ -1,8 +1,10 @@
 import { apiClient, unwrapData } from "@/shared/api/apiClient";
+import type { MarketplaceBillingMetadata } from "./posts";
 
 export type JobApplicationStatus = "OPEN" | "CLOSED" | "FILLED" | string;
 
 export type JobApplicationRecord = {
+  billing?: MarketplaceBillingMetadata;
   createdByCompany?: {
     city?: string | null;
     countryCode?: string | null;
@@ -76,6 +78,14 @@ export type CreateJobApplicationInput = {
   title: string;
 };
 
+export type UpdateJobApplicationInput = Partial<Omit<CreateJobApplicationInput, "description" | "expectedPayAmount" | "preferredCity" | "preferredCountryCode"> & {
+  description: string | null;
+  expectedPayAmount: number | null;
+  preferredCity: string | null;
+  preferredCountryCode: string | null;
+  status: "OPEN" | "PAUSED" | "CLOSED";
+}>;
+
 export type ApplyToJobApplicationInput = {
   message?: string;
 };
@@ -90,6 +100,18 @@ export function listMyJobApplications() {
 
 export function createJobApplication(input: CreateJobApplicationInput) {
   return unwrapData<JobApplicationRecord>(apiClient.post("/job-applications", input));
+}
+
+export function updateJobApplication(jobApplicationId: string, input: UpdateJobApplicationInput) {
+  return unwrapData<JobApplicationRecord>(apiClient.patch(`/job-applications/${jobApplicationId}`, input));
+}
+
+export function deleteJobApplication(jobApplicationId: string) {
+  return unwrapData<JobApplicationRecord>(apiClient.delete(`/job-applications/${jobApplicationId}`));
+}
+
+export function restoreJobApplication(jobApplicationId: string) {
+  return unwrapData<JobApplicationRecord>(apiClient.post(`/job-applications/${jobApplicationId}/restore`, {}));
 }
 
 export function promoteJobApplication(jobApplicationId: string) {

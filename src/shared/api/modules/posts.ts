@@ -2,12 +2,30 @@ import { apiClient, unwrapData } from "@/shared/api/apiClient";
 
 export type PostStatus = "OPEN" | "ASSIGNED" | "CANCELLED" | "EXPIRED";
 export type PostPriceType = "FIXED" | "NEGOTIABLE" | "REQUEST_QUOTE";
+export type PostScope = "marketplace" | "mine";
 export type VehicleBodyType = "TILT" | "BOX" | "FLATBED" | "REEFER" | "TANKER";
 
+export type MarketplaceBillingMetadata = {
+  creditCost: number;
+  mode: "INCLUDED_QUOTA" | "CREDITS";
+  quotaLimit?: number | null;
+  quotaRemaining?: number;
+  quotaUsed?: number;
+  walletBalanceCredits: number;
+};
+
 export type PostRecord = {
+  billing?: MarketplaceBillingMetadata;
   cargoDescription?: string | null;
   cargoType?: string | null;
   companyId: string;
+  company?: {
+    city?: string | null;
+    countryCode?: string | null;
+    id: string;
+    isVerified?: boolean;
+    name: string;
+  };
   createdAt: string;
   createdByUserId: string;
   currency: string;
@@ -23,8 +41,24 @@ export type PostRecord = {
   pickupLatestAt?: string | null;
   priceAmount?: string | null;
   priceType: PostPriceType;
+  promotedUntil?: string | null;
   requiredBodyType?: VehicleBodyType | null;
   routeId: string;
+  route?: {
+    destinationLocation: {
+      city: string;
+      countryCode: string;
+      region?: string | null;
+    };
+    distanceKm?: number | null;
+    estimatedDurationMinutes?: number | null;
+    id: string;
+    originLocation: {
+      city: string;
+      countryCode: string;
+      region?: string | null;
+    };
+  };
   status: PostStatus;
   temperatureControlRequired: boolean;
   temperatureMaxC?: number | null;
@@ -47,7 +81,7 @@ export type CreatePostInput = {
   weightKg?: number;
 };
 
-export function listPosts(params?: { status?: PostStatus }) {
+export function listPosts(params?: { scope?: PostScope; status?: PostStatus }) {
   return unwrapData<PostRecord[]>(apiClient.get("/posts", { params }));
 }
 
@@ -65,6 +99,10 @@ export function updatePost(postId: string, input: Partial<CreatePostInput>) {
 
 export function changePostStatus(postId: string, status: PostStatus) {
   return unwrapData<PostRecord>(apiClient.patch(`/posts/${postId}/status`, { status }));
+}
+
+export function boostPost(postId: string) {
+  return unwrapData<PostRecord>(apiClient.post(`/posts/${postId}/boost`, {}));
 }
 
 export function deletePost(postId: string) {

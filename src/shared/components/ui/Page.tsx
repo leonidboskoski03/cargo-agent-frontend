@@ -11,13 +11,13 @@ type PageHeaderProps = {
 
 export function PageHeader({ action, eyebrow, subtitle, title }: PageHeaderProps) {
   return (
-    <div className="flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-end md:justify-between">
+    <div className="flex flex-col gap-4 pb-1 md:flex-row md:items-end md:justify-between">
       <div className="max-w-3xl">
         {eyebrow ? <p className="text-xs font-semibold uppercase tracking-normal text-primary">{eyebrow}</p> : null}
-        <h1 className="mt-2 text-4xl font-semibold leading-tight tracking-[-0.28px] text-foreground">{title}</h1>
-        {subtitle ? <p className="mt-3 text-base font-normal leading-7 text-muted">{subtitle}</p> : null}
+        <h1 className="mt-2 text-3xl font-bold leading-tight tracking-[-0.28px] text-foreground">{title}</h1>
+        {subtitle ? <p className="mt-0 text-[12px] font-normal leading-7 text-muted tracking-[0.05px]">{subtitle}</p> : null}
       </div>
-      {action ? <div className="shrink-0">{action}</div> : null}
+      {action ? <div className="shrink-0 font-normal text-[12px]">{action}</div> : null}
     </div>
   );
 }

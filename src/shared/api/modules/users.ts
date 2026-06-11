@@ -8,6 +8,7 @@ export type UserProfile = AuthUser & {
   deletedAt?: string | null;
   emailVerifiedAt?: string | null;
   headline?: string | null;
+  imageUrl?: string | null;
   isActive: boolean;
   phone?: string | null;
   preferredRoutes?: string[];
@@ -23,10 +24,17 @@ export type ProfileCompletion = {
 };
 
 export type UserSelfUpdateInput = Partial<{
+  availability: string | null;
+  city: string | null;
+  countryCode: string | null;
   firstName: string;
+  headline: string | null;
+  imageUrl: string | null;
   isActive: boolean;
   lastName: string;
   phone: string | null;
+  preferredRoutes: string[] | null;
+  yearsExperience: number | null;
 }>;
 
 export type UserMembershipInput = {

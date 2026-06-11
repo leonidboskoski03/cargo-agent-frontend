@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { getDeliveryStatus } from "@/shared/api/modules/delivery";
 import { listBillingEvents } from "@/shared/api/modules/billingEvents";
+import { getBillingReadiness } from "@/shared/api/modules/billingReadiness";
 import { listPlans } from "@/shared/api/modules/plans";
 import { getMySubscription } from "@/shared/api/modules/subscriptions";
 import { StatusBadge } from "@/shared/components/ui/DataTable";
@@ -66,6 +67,7 @@ export function ReleaseReadinessPage() {
   const user = useAuthStore((state) => state.user);
   const canView = canManageCompany(user?.role);
   const deliveryQuery = useQuery({ enabled: canView, queryFn: getDeliveryStatus, queryKey: ["delivery", "status"], staleTime: 1000 * 30 });
+  const billingReadinessQuery = useQuery({ enabled: canView, queryFn: getBillingReadiness, queryKey: ["billing", "readiness", "release-readiness"], staleTime: 1000 * 30 });
   const plansQuery = useQuery({ enabled: canView, queryFn: () => listPlans(), queryKey: ["plans", "release-readiness"], staleTime: 1000 * 30 });
   const subscriptionQuery = useQuery({ enabled: canView, queryFn: () => getMySubscription(), queryKey: ["subscriptions", "me", "release-readiness"], staleTime: 1000 * 30 });
   const eventsQuery = useQuery({ enabled: canView, queryFn: () => listBillingEvents({ page: 1, pageSize: 5 }), queryKey: ["billing-events", "release-readiness"], staleTime: 1000 * 30 });
@@ -74,7 +76,7 @@ export function ReleaseReadinessPage() {
     return <ErrorState description="Release readiness diagnostics are available to company admins only." title="Admin-only release readiness" />;
   }
 
-  if (deliveryQuery.isLoading || plansQuery.isLoading || subscriptionQuery.isLoading || eventsQuery.isLoading) {
+  if (deliveryQuery.isLoading || billingReadinessQuery.isLoading || plansQuery.isLoading || subscriptionQuery.isLoading || eventsQuery.isLoading) {
     return <LoadingState description="Checking delivery, storage, and billing-facing readiness signals." title="Loading release readiness" />;
   }
 
@@ -83,7 +85,15 @@ export function ReleaseReadinessPage() {
   }
 
   const delivery = deliveryQuery.data;
+  const billingReadiness = billingReadinessQuery.data;
   const billingReachable = !plansQuery.error && !subscriptionQuery.error && !eventsQuery.error;
+  const stripeConfigured = Boolean(
+    billingReadiness?.stripeSecretConfigured &&
+      billingReadiness.stripeWebhookSecretConfigured &&
+      billingReadiness.proPriceConfigured &&
+      billingReadiness.companyCreditPricesConfigured &&
+      billingReadiness.jobSeekerCreditPricesConfigured,
+  );
   const emailReady = Boolean(delivery?.email.configured && delivery.invites.configured && delivery.otp.configured);
   const storageReady = Boolean(delivery?.storage.configured);
 
@@ -116,9 +126,9 @@ export function ReleaseReadinessPage() {
         <Surface>
           <ShieldCheck className="size-5 text-primary" aria-hidden="true" />
           <h2 className="mt-3 text-xl font-semibold">Billing API</h2>
-          <p className="mt-1 text-sm text-muted">Plans, subscription, and event history probes</p>
+          <p className="mt-1 text-sm text-muted">Stripe keys, prices, queues, and billing probes</p>
           <div className="mt-4">
-            <StatusBadge tone={tone(billingReachable)}>{billingReachable ? "Reachable" : "Probe failed"}</StatusBadge>
+            <StatusBadge tone={tone(billingReachable && stripeConfigured)}>{billingReachable && stripeConfigured ? "Sandbox ready" : "Evidence pending"}</StatusBadge>
           </div>
         </Surface>
       </section>
@@ -137,9 +147,23 @@ export function ReleaseReadinessPage() {
             title="Media upload storage"
           />
           <ReadinessRow
-            description={billingReachable ? "Billing API reads are available. Stripe replay still needs real event IDs." : "Billing probes failed; open Billing for trace-ID details."}
+            description={
+              stripeConfigured
+                ? "Stripe test secret, webhook secret, PRO price, credit-pack prices, and queue mode are configured. Real event IDs are still required for release proof."
+                : "Missing one or more Stripe readiness booleans: secret key, webhook secret, PRO price, company credit prices, or job seeker credit prices."
+            }
+            ready={stripeConfigured}
+            title="RB-003 Stripe sandbox"
+          />
+          <ReadinessRow
+            description={billingReachable ? "Plans, subscription, and billing event reads are available." : "Billing probes failed; open Billing for trace-ID details."}
             ready={billingReachable}
-            title="RB-003 billing surface"
+            title="Billing API probes"
+          />
+          <ReadinessRow
+            description={billingReadiness?.bullmqEnabled ? "Worker mode is queue-enabled; capture worker startup logs for evidence." : "Queue mode is disabled; staging proof should explain why webhooks process synchronously."}
+            ready={Boolean(billingReadiness?.bullmqEnabled)}
+            title="BullMQ worker mode"
           />
           <ReadinessRow
             description="Contract adoption is covered by npm run test:evidence:contracts and the G-005 artifact."

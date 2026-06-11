@@ -2,13 +2,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, CheckCircle2, LogOut, Mail, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { acceptCompanyInvite } from "@/shared/api/modules/companyInvites";
 import { logout, refreshSession, register, requestOtp, resendOtp, verifyOtp, type OtpChallengeResponse } from "@/shared/api/modules/auth";
 import { getMe } from "@/shared/api/modules/users";
 import { Button } from "@/shared/components/ui/Button";
 import { Field, Input } from "@/shared/components/ui/Form";
+import { OtpCodeInput } from "@/shared/components/ui/OtpCodeInput";
 import { ErrorState, LoadingState, Surface } from "@/shared/components/ui/Page";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { useAuthStore } from "@/features/auth/authStore";
@@ -67,11 +68,13 @@ export function InviteAcceptPage() {
     resolver: zodResolver(inviteAccountOtpSchema),
     defaultValues: { code: "" },
   });
+  const accountOtpCode = useWatch({ control: accountOtpForm.control, name: "code" });
 
   const otpForm = useForm<InviteAcceptOtpValues>({
     resolver: zodResolver(inviteAcceptOtpSchema),
     defaultValues: { code: "" },
   });
+  const inviteOtpCode = useWatch({ control: otpForm.control, name: "code" });
 
   const returnState = { from: { hash: location.hash, pathname: location.pathname, search: location.search } };
 
@@ -243,7 +246,12 @@ export function InviteAcceptPage() {
                       <p className="mt-1 text-sm leading-6 text-muted">Enter the account setup OTP, then continue with invite verification.</p>
                     </div>
                     <Field error={accountOtpForm.formState.errors.code} label="Account setup OTP" required>
-                      <Input {...accountOtpForm.register("code")} autoComplete="one-time-code" inputMode="numeric" />
+                      <OtpCodeInput
+                        autoFocus
+                        disabled={completeAccountMutation.isPending}
+                        onChange={(code) => accountOtpForm.setValue("code", code, { shouldDirty: true, shouldValidate: true })}
+                        value={accountOtpCode}
+                      />
                     </Field>
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <Button disabled={completeAccountMutation.isPending} type="submit">
@@ -313,7 +321,12 @@ export function InviteAcceptPage() {
                       <p className="mt-1 text-sm leading-6 text-muted">A code was sent to {user.email}. It expires with the current challenge.</p>
                     </div>
                     <Field error={otpForm.formState.errors.code} label="OTP code" required>
-                      <Input {...otpForm.register("code")} autoComplete="one-time-code" inputMode="numeric" />
+                      <OtpCodeInput
+                        autoFocus
+                        disabled={acceptMutation.isPending}
+                        onChange={(code) => otpForm.setValue("code", code, { shouldDirty: true, shouldValidate: true })}
+                        value={inviteOtpCode}
+                      />
                     </Field>
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <Button disabled={acceptMutation.isPending} type="submit">

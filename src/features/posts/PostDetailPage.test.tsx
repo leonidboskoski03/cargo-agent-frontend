@@ -101,6 +101,14 @@ describe("PostDetailPage marketplace actions", () => {
       isPromoted: false,
       priceAmount: null,
       priceType: "REQUEST_QUOTE",
+      company: { city: "Skopje", countryCode: "MK", id: "company_owner", isVerified: true, name: "Owner Logistics" },
+      route: {
+        destinationLocation: { city: "Sofia", countryCode: "BG" },
+        distanceKm: 240,
+        estimatedDurationMinutes: 280,
+        id: "route_1",
+        originLocation: { city: "Skopje", countryCode: "MK" },
+      },
       routeId: "route_1",
       status: "OPEN",
       temperatureControlRequired: false,
@@ -147,10 +155,12 @@ describe("PostDetailPage marketplace actions", () => {
 
     expect(await screen.findByRole("heading", { name: "Skopje load" })).toBeInTheDocument();
     expect(screen.getByText("Request Quote")).toBeInTheDocument();
+    expect(screen.getByText("Skopje, MK")).toBeInTheDocument();
+    expect(screen.getByText("Sofia, BG")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
 
-    expect(screen.getByText("Confirm bid action")).toBeInTheDocument();
+    expect(screen.getByText("Accept bid and create contract?")).toBeInTheDocument();
     expect(bidsApi.changeBidStatus).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole("button", { name: "Confirm" }));

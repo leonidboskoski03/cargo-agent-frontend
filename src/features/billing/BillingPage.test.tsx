@@ -14,6 +14,7 @@ const subscriptionApi = vi.hoisted(() => ({
   revertSubscriptionCancel: vi.fn(),
 }));
 const billingEventsApi = vi.hoisted(() => ({ listBillingEvents: vi.fn() }));
+const billingReadinessApi = vi.hoisted(() => ({ getBillingReadiness: vi.fn() }));
 
 vi.mock("@/shared/api/modules/plans", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/shared/api/modules/plans")>()),
@@ -34,6 +35,8 @@ vi.mock("@/shared/api/modules/billingEvents", async (importOriginal) => ({
   listBillingEvents: billingEventsApi.listBillingEvents,
 }));
 
+vi.mock("@/shared/api/modules/billingReadiness", () => billingReadinessApi);
+
 const adminUser = {
   companyId: "company_123",
   email: "admin@cargo.test",
@@ -51,11 +54,11 @@ const driverUser = {
   role: "COMPANY_DRIVER" as const,
 };
 
-function renderBillingPage() {
+function renderBillingPage(checkoutReturn?: "canceled" | "success") {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <BillingPage />
+        <BillingPage checkoutReturn={checkoutReturn} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -84,6 +87,14 @@ describe("BillingPage", () => {
     ]);
     subscriptionApi.getMySubscription.mockResolvedValue({ cancelAtPeriodEnd: false, companyId: "company_123", endsAt: null, planCode: "FREE", startsAt: null, status: "FREE" });
     billingEventsApi.listBillingEvents.mockResolvedValue([]);
+    billingReadinessApi.getBillingReadiness.mockResolvedValue({
+      bullmqEnabled: true,
+      companyCreditPricesConfigured: true,
+      jobSeekerCreditPricesConfigured: true,
+      proPriceConfigured: true,
+      stripeSecretConfigured: true,
+      stripeWebhookSecretConfigured: true,
+    });
   });
 
   it("shows subscription mutation controls to admins", async () => {
@@ -94,6 +105,7 @@ describe("BillingPage", () => {
     expect(await screen.findByRole("button", { name: /start checkout/i }, { timeout: 3000 })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /cancel at period end/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /portal/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/idempotency key/i)).not.toBeInTheDocument();
   });
 
   it("keeps drivers in read-only billing mode", async () => {
@@ -104,5 +116,32 @@ describe("BillingPage", () => {
     expect(await screen.findByText(/driver billing view is read-only/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /start checkout/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /cancel at period end/i })).not.toBeInTheDocument();
+  });
+
+  it("shows Stripe return and readiness state", async () => {
+    useAuthStore.setState({ status: "authenticated", user: adminUser });
+
+    renderBillingPage("success");
+
+    expect(await screen.findByText(/checkout returned from stripe/i)).toBeInTheDocument();
+    expect(await screen.findByText("Ready for sandbox")).toBeInTheDocument();
+  });
+
+  it("does not crash when a plan has no features object", async () => {
+    useAuthStore.setState({ status: "authenticated", user: adminUser });
+    plansApi.listPlans.mockResolvedValueOnce([
+      {
+        billingInterval: "MONTHLY",
+        code: "PRO",
+        currency: "EUR",
+        name: "Pro",
+        priceAmount: "49",
+      },
+    ]);
+
+    renderBillingPage();
+
+    expect(await screen.findByRole("heading", { name: "Pro" })).toBeInTheDocument();
+    expect(screen.getByText("Promoted posts")).toBeInTheDocument();
   });
 });

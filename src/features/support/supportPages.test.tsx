@@ -89,6 +89,26 @@ describe("support pages", () => {
     expect(await screen.findByRole("button", { name: /mark all read/i })).toBeInTheDocument();
   });
 
+  it("links accepted-bid notifications to the created contract when present", async () => {
+    useAuthStore.setState({ status: "authenticated", user: driverUser });
+    notificationsApi.listNotifications.mockResolvedValue([
+      {
+        body: "Your bid has been accepted.",
+        createdAt: "2026-06-09T10:00:00.000Z",
+        id: "notification_1",
+        isRead: false,
+        payloadJson: { bidId: "bid_1", contractId: "contract_1", postId: "post_1" },
+        title: "Bid accepted",
+        type: "BID_ACCEPTED",
+      },
+    ]);
+
+    renderWithProviders(<NotificationsPage />);
+
+    expect(await screen.findByText("Bid accepted")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /open contract/i })).toHaveAttribute("href", "/contracts/contract_1");
+  });
+
   it("shows document create controls only to admins", async () => {
     useAuthStore.setState({ status: "authenticated", user: adminUser });
     renderWithProviders(<DocumentsPage />);

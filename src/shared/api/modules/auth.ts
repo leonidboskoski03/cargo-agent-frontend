@@ -18,7 +18,7 @@ export type LoginResponse =
 export type RegistrationStartInput = {
   email: string;
   firstName: string;
-  kind: "COMPANY";
+  kind: "COMPANY" | "JOB_SEEKER";
   lastName: string;
   password: string;
   phone?: string;
@@ -49,6 +49,14 @@ export type RequestOtpInput = {
   purpose: OtpPurpose;
 };
 
+export type ForgotPasswordResponse = {
+  challengeId?: string;
+  code?: string;
+  expiresAt?: string;
+  message: string;
+  nextAction: { purpose: "FORGOT_PASSWORD"; type: "VERIFY_OTP" };
+};
+
 export type RegisterInput = {
   email: string;
   firstName: string;
@@ -73,12 +81,30 @@ export type CompleteCompanyRegistrationInput = {
   website?: string;
 };
 
+export type CompleteJobSeekerRegistrationInput = {
+  availability?: string;
+  city: string;
+  countryCode: string;
+  draftId: string;
+  headline?: string;
+  preferredRoutes?: string[];
+  yearsExperience?: number;
+};
+
 export function login(input: LoginInput) {
   return unwrapData<LoginResponse>(apiClient.post("/auth/login", input));
 }
 
 export function loginVerifyOtp(input: LoginInput & { otpChallengeId: string }) {
   return unwrapData<{ user: AuthUser }>(apiClient.post("/auth/login/verify-otp", input));
+}
+
+export function forgotPassword(input: { email: string }) {
+  return unwrapData<ForgotPasswordResponse>(apiClient.post("/auth/forgot-password", input));
+}
+
+export function resetPassword(input: { newPassword: string; otpChallengeId: string }) {
+  return unwrapData<{ message: string }>(apiClient.post("/auth/reset-password", input));
 }
 
 export function register(input: RegisterInput) {
@@ -98,7 +124,7 @@ export function startCompanyRegistration(input: RegistrationStartInput) {
 }
 
 export function verifyRegistrationOtp(input: { code: string; draftId: string }) {
-  return unwrapData<{ draftId: string; kind: "COMPANY"; nextAction: { type: string }; otpVerified: true }>(
+  return unwrapData<{ draftId: string; kind: "COMPANY" | "JOB_SEEKER"; nextAction: { type: string }; otpVerified: true }>(
     apiClient.post("/auth/registration/verify-otp", input),
   );
 }
@@ -120,5 +146,11 @@ export function resendOtp(input: { challengeId: string }) {
 export function completeCompanyRegistration(input: CompleteCompanyRegistrationInput) {
   return unwrapData<{ checkout: null | { checkoutUrl?: string }; company: unknown; user: AuthUser }>(
     apiClient.post("/auth/registration/complete-company", input),
+  );
+}
+
+export function completeJobSeekerRegistration(input: CompleteJobSeekerRegistrationInput) {
+  return unwrapData<{ nextAction?: { type: string }; user: AuthUser }>(
+    apiClient.post("/auth/registration/complete-job-seeker", input),
   );
 }

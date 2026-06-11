@@ -1,14 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, BriefcaseBusiness, Pencil, Send } from "lucide-react";
+import { ArrowLeft, Building2, Clock, MapPin, Package, Pencil, Rocket, Send, ShieldCheck, Truck } from "lucide-react";
 import { Fragment, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { changeBidStatus, createBid, deleteBid, listBids, restoreBid, updateBid, type BidRecord, type BidStatus } from "@/shared/api/modules/bids";
-import { createContract, listContracts } from "@/shared/api/modules/contracts";
+import { boostBid, changeBidStatus, createBid, deleteBid, listBids, restoreBid, updateBid, type BidRecord, type BidStatus } from "@/shared/api/modules/bids";
+import { listContracts } from "@/shared/api/modules/contracts";
 import { listRoutes } from "@/shared/api/modules/locationsRoutes";
-import { changePostStatus, deletePost, getPost, restorePost, updatePost } from "@/shared/api/modules/posts";
+import { boostPost, changePostStatus, deletePost, getPost, restorePost, updatePost } from "@/shared/api/modules/posts";
 import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
 import { Field, Input, Select, Textarea } from "@/shared/components/ui/Form";
@@ -17,9 +17,7 @@ import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { humanizeEnum } from "@/shared/lib/formatters";
 import { useAuthStore } from "@/features/auth/authStore";
 import { bidSchema, type BidFormInput, type BidFormValues } from "@/features/bids/bidSchemas";
-import { contractSchema, type ContractFormInput, type ContractFormValues } from "@/features/contracts/contractSchemas";
 import { contractTone, formatCurrency } from "@/features/contracts/contractFormatters";
-import { canCreateContract } from "@/features/contracts/contractPermissions";
 import { canDecideBid, canEditCompanyPost, canManageCompanyPosts, canManageOwnPendingBid } from "./postPermissions";
 import { postSchema, type PostFormInput, type PostFormValues } from "./postSchemas";
 
@@ -40,6 +38,19 @@ function toDateTimeInput(value?: string | null) {
   return value ? value.slice(0, 16) : "";
 }
 
+function formatDuration(minutes?: number | null) {
+  if (!minutes) return "Not estimated";
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours <= 0) return `${mins} min`;
+  return mins ? `${hours} hr ${mins} min` : `${hours} hr`;
+}
+
+function formatRouteLocation(location?: { city: string; countryCode: string; region?: string | null }) {
+  if (!location) return "Not available";
+  return [location.city, location.region, location.countryCode].filter(Boolean).join(", ");
+}
+
 function bidFormValues(bid: BidRecord): BidFormInput {
   return {
     currency: bid.currency,
@@ -49,6 +60,14 @@ function bidFormValues(bid: BidRecord): BidFormInput {
     offeredPriceAmount: bid.offeredPriceAmount ?? "",
     postId: bid.postId,
   };
+}
+
+function isPostBoosted(post?: { promotedUntil?: string | null } | null) {
+  return Boolean(post?.promotedUntil && new Date(post.promotedUntil) > new Date());
+}
+
+function isBidBoosted(bid: BidRecord) {
+  return Boolean(bid.boostedUntil && new Date(bid.boostedUntil) > new Date());
 }
 
 export function PostDetailPage() {
@@ -62,31 +81,22 @@ export function PostDetailPage() {
     bidId: string;
     status: Extract<BidStatus, "ACCEPTED" | "REJECTED" | "WITHDRAWN">;
   } | null>(null);
+  const [boostBidTarget, setBoostBidTarget] = useState<BidRecord | null>(null);
+  const [boostCredits, setBoostCredits] = useState("1");
   const postQuery = useQuery({ enabled: Boolean(postId), queryFn: () => getPost(postId), queryKey: ["posts", postId] });
   const bidsQuery = useQuery({ enabled: Boolean(postId), queryFn: () => listBids({ postId }), queryKey: ["bids", postId] });
   const contractsQuery = useQuery({ enabled: Boolean(postId), queryFn: () => listContracts(), queryKey: ["contracts", "post-handoff", postId] });
-  const routesQuery = useQuery({ queryFn: () => listRoutes(), queryKey: ["routes"] });
   const post = postQuery.data;
+  const ownsPost = Boolean(post && user?.companyId === post.companyId);
+  const routesQuery = useQuery({ enabled: ownsPost, queryFn: () => listRoutes(), queryKey: ["routes"] });
   const bids = bidsQuery.data ?? [];
   const routes = routesQuery.data ?? [];
-  const route = routes.find((item) => item.id === post?.routeId);
+  const route = post?.route ?? routes.find((item) => item.id === post?.routeId);
   const relatedContracts = (contractsQuery.data ?? []).filter((contract) => contract.postId === postId);
   const activeContract = relatedContracts[0];
   const acceptedBids = bids.filter((bid) => bid.status === "ACCEPTED" && bid.offeredPriceAmount);
-  const canCreateBid = Boolean(post && user?.companyId && user.companyId !== post.companyId && post.status === "OPEN");
-  const ownsPost = Boolean(post && user?.companyId === post.companyId);
-  const canShowContractCreation = Boolean(
-    post &&
-      acceptedBids.some((bid) =>
-        canCreateContract({
-          bidStatus: bid.status,
-          hasOfferedPrice: Boolean(bid.offeredPriceAmount),
-          ownsPost,
-          postStatus: post.status,
-          role: user?.role,
-        }),
-      ),
-  );
+  const pendingBids = bids.filter((bid) => bid.status === "PENDING");
+  const canCreateBid = Boolean(post && isAdmin && user?.companyId && user.companyId !== post.companyId && post.status === "OPEN");
 
   const form = useForm<BidFormInput, unknown, BidFormValues>({
     resolver: zodResolver(bidSchema),
@@ -146,22 +156,6 @@ export function PostDetailPage() {
     },
   });
 
-  const contractForm = useForm<ContractFormInput, unknown, ContractFormValues>({
-    resolver: zodResolver(contractSchema),
-    defaultValues: {
-      acceptedBidId: "",
-      deliveryPlannedAt: "",
-      pickupPlannedAt: "",
-      postId,
-    },
-    values: {
-      acceptedBidId: acceptedBids[0]?.id ?? "",
-      deliveryPlannedAt: "",
-      pickupPlannedAt: "",
-      postId,
-    },
-  });
-
   const createBidMutation = useAppMutation({
     messages: { success: "Bid submitted" },
     mutationFn: createBid,
@@ -171,23 +165,36 @@ export function PostDetailPage() {
     },
   });
 
-  const createContractMutation = useAppMutation({
-    messages: { success: "Contract created" },
-    mutationFn: createContract,
-    onSuccess: (contract) => {
-      void queryClient.invalidateQueries({ queryKey: ["contracts"] });
-      void queryClient.invalidateQueries({ queryKey: ["contracts", "post-handoff", postId] });
-      navigate(`/contracts/${contract.id}`);
-    },
-  });
-
   const statusMutation = useAppMutation({
-    messages: { success: "Bid status updated" },
+    messages: {
+      success: (bid) => bid.status === "ACCEPTED" && bid.contract ? "Contract created" : "Bid status updated",
+    },
     mutationFn: ({ bidId, status }: { bidId: string; status: "ACCEPTED" | "REJECTED" | "WITHDRAWN" }) => changeBidStatus(bidId, status),
     onSuccess: () => {
       setPendingBidAction(null);
       void queryClient.invalidateQueries({ queryKey: ["bids", postId] });
       void queryClient.invalidateQueries({ queryKey: ["posts", postId] });
+      void queryClient.invalidateQueries({ queryKey: ["contracts"] });
+      void queryClient.invalidateQueries({ queryKey: ["contracts", "post-handoff", postId] });
+    },
+  });
+
+  const boostPostMutation = useAppMutation({
+    messages: { success: "Post boosted" },
+    mutationFn: () => boostPost(postId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["posts", postId] });
+      void queryClient.invalidateQueries({ queryKey: ["posts"] });
+    },
+  });
+
+  const boostBidMutation = useAppMutation({
+    messages: { success: "Bid boosted" },
+    mutationFn: () => boostBid(boostBidTarget?.id ?? "", Number(boostCredits)),
+    onSuccess: () => {
+      setBoostBidTarget(null);
+      setBoostCredits("1");
+      void queryClient.invalidateQueries({ queryKey: ["bids", postId] });
     },
   });
 
@@ -269,11 +276,11 @@ export function PostDetailPage() {
     },
   });
 
-  if (postQuery.isLoading || routesQuery.isLoading) {
+  if (postQuery.isLoading || (routesQuery.isLoading && ownsPost)) {
     return <LoadingState description="Loading post, routes, and related bid data." title="Loading post detail" />;
   }
 
-  if (postQuery.error || routesQuery.error) {
+  if (postQuery.error || (routesQuery.error && ownsPost)) {
     return (
       <ErrorState
         action={<Link className="inline-flex min-h-10 items-center rounded-lg border border-primary bg-card px-4 py-2 text-sm text-primary" to="/posts">Back to posts</Link>}
@@ -299,9 +306,15 @@ export function PostDetailPage() {
           isAdmin && ownsPost ? (
             <div className="flex flex-wrap gap-2">
               {post.status === "OPEN" ? (
-                <Button disabled={postStatusMutation.isPending} onClick={() => postStatusMutation.mutate({ status: "CANCELLED" })} type="button" variant="secondary">
-                  Cancel post
-                </Button>
+                <>
+                  <Button disabled={boostPostMutation.isPending} onClick={() => boostPostMutation.mutate()} type="button" variant="secondary">
+                    <Rocket className="size-4" />
+                    Boost post - 2 credits
+                  </Button>
+                  <Button disabled={postStatusMutation.isPending} onClick={() => postStatusMutation.mutate({ status: "CANCELLED" })} type="button" variant="secondary">
+                    Cancel post
+                  </Button>
+                </>
               ) : null}
               <Button disabled={deletePostMutation.isPending} onClick={() => deletePostMutation.mutate()} type="button" variant="danger">
                 Delete post
@@ -314,36 +327,96 @@ export function PostDetailPage() {
         title={post.title ?? "Untitled post"}
       />
 
+      {isPostBoosted(post) ? (
+        <Surface className="border-blue-100 bg-blue-50">
+          <div className="flex items-start gap-3">
+            <Rocket className="mt-0.5 size-5 text-primary" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">Boosted post</p>
+              <p className="mt-1 text-sm leading-6 text-muted">Boosted posts rank higher in the marketplace for 7 days.</p>
+            </div>
+          </div>
+        </Surface>
+      ) : null}
+
+      {!ownsPost ? (
+        <Surface className="border-blue-100 bg-blue-50">
+          <div className="flex items-start gap-3">
+            <Truck className="mt-0.5 size-5 text-primary" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">Marketplace opportunity</p>
+              <p className="mt-1 text-sm leading-6 text-muted">
+                This is an open post from another company. You can review the safe route and cargo details, then submit a bid if your company can cover it.
+              </p>
+            </div>
+          </div>
+        </Surface>
+      ) : null}
+
       <div className="grid gap-5 lg:grid-cols-[0.62fr_0.38fr]">
-        <Surface>
-          <dl className="grid gap-4 md:grid-cols-2">
+        <Surface className="space-y-5">
+          <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-center">
+            <div className="rounded-lg border border-border bg-surface-pearl p-4">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted">
+                <MapPin className="size-4" aria-hidden="true" />
+                Origin
+              </div>
+              <p className="mt-2 text-lg font-semibold">{formatRouteLocation(route?.originLocation)}</p>
+            </div>
+            <div className="hidden h-px bg-border md:block" />
+            <div className="rounded-lg border border-border bg-surface-pearl p-4">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted">
+                <MapPin className="size-4" aria-hidden="true" />
+                Destination
+              </div>
+              <p className="mt-2 text-lg font-semibold">{formatRouteLocation(route?.destinationLocation)}</p>
+            </div>
+          </div>
+          <dl className="grid gap-4 md:grid-cols-3">
             <div>
               <dt className="text-xs font-semibold uppercase text-muted">Status</dt>
-              <dd className="mt-1"><StatusBadge tone={postTone(post.status)}>{humanizeEnum(post.status)}</StatusBadge></dd>
+              <dd className="mt-1 flex flex-wrap gap-2">
+                <StatusBadge tone={postTone(post.status)}>{humanizeEnum(post.status)}</StatusBadge>
+                {isPostBoosted(post) ? <StatusBadge tone="success">Boosted</StatusBadge> : null}
+              </dd>
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase text-muted">Price</dt>
               <dd className="mt-1 text-sm">{post.priceAmount ? formatCurrency(post.priceAmount, post.currency) : humanizeEnum(post.priceType)}</dd>
             </div>
             <div>
+              <dt className="text-xs font-semibold uppercase text-muted">Distance</dt>
+              <dd className="mt-1 text-sm">{route?.distanceKm ? `${route.distanceKm} km` : "Not estimated"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase text-muted">Duration</dt>
+              <dd className="mt-1 flex items-center gap-1 text-sm"><Clock className="size-4 text-muted" aria-hidden="true" /> {formatDuration(route?.estimatedDurationMinutes)}</dd>
+            </div>
+            <div>
               <dt className="text-xs font-semibold uppercase text-muted">Cargo type</dt>
-              <dd className="mt-1 text-sm">{post.cargoType ?? "Not specified"}</dd>
+              <dd className="mt-1 flex items-center gap-1 text-sm"><Package className="size-4 text-muted" aria-hidden="true" /> {post.cargoType ?? "Not specified"}</dd>
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase text-muted">Weight</dt>
               <dd className="mt-1 text-sm">{post.weightKg ? `${post.weightKg} kg` : "Not specified"}</dd>
             </div>
             <div>
-              <dt className="text-xs font-semibold uppercase text-muted">Route</dt>
-              <dd className="mt-1 text-sm">
-                {route
-                  ? `${route.originLocation.city}, ${route.originLocation.countryCode} -> ${route.destinationLocation.city}, ${route.destinationLocation.countryCode}`
-                  : post.routeId.slice(0, 8)}
-              </dd>
+              <dt className="text-xs font-semibold uppercase text-muted">Bid state</dt>
+              <dd className="mt-1 text-sm">{bids.length} total / {pendingBids.length} pending / {acceptedBids.length} accepted</dd>
+              <p className="mt-1 text-xs text-muted">
+                {activeContract ? "Contract created from the accepted bid." : acceptedBids.length ? "Accepted bid is ready for contract handoff." : "Accept a pending bid to create the contract automatically."}
+              </p>
+              <Link className="mt-1 inline-flex text-xs font-semibold text-primary" to={`/bids?postId=${post.id}`}>
+                Manage bids
+              </Link>
             </div>
             <div>
-              <dt className="text-xs font-semibold uppercase text-muted">Bid state</dt>
-              <dd className="mt-1 text-sm">{bids.length} total / {acceptedBids.length} accepted</dd>
+              <dt className="text-xs font-semibold uppercase text-muted">Posted by</dt>
+              <dd className="mt-1 flex items-center gap-1 text-sm">
+                <Building2 className="size-4 text-muted" aria-hidden="true" />
+                {post.company?.name ?? "Company"}
+                {post.company?.isVerified ? <ShieldCheck className="size-4 text-emerald-600" aria-label="Verified company" /> : null}
+              </dd>
             </div>
           </dl>
         </Surface>
@@ -362,6 +435,10 @@ export function PostDetailPage() {
                 <div>
                   <dt className="text-xs font-semibold uppercase text-muted">Contract</dt>
                   <dd className="mt-1">{activeContract.id.slice(0, 8)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase text-muted">Source</dt>
+                  <dd className="mt-1">Created automatically from accepted bid {activeContract.acceptedBidId.slice(0, 8)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs font-semibold uppercase text-muted">Agreed price</dt>
@@ -396,7 +473,7 @@ export function PostDetailPage() {
             </form>
           ) : (
             <EmptyState
-              description={ownsPost ? "Review incoming bids, accept the right one, then create the contract handoff." : "Bidding is available only for open posts owned by another company."}
+              description={ownsPost ? "Review incoming bids and accept the right one. The contract will be created automatically." : "Bidding is available only for open posts owned by another company."}
               title={ownsPost ? "Next action: manage bids" : "Bidding unavailable"}
             />
           )}
@@ -454,35 +531,25 @@ export function PostDetailPage() {
         </Surface>
       ) : null}
 
-      {canShowContractCreation ? (
+      {boostBidTarget ? (
         <Surface>
-          <form className="grid gap-4 lg:grid-cols-3" onSubmit={contractForm.handleSubmit((values) => createContractMutation.mutate(values))}>
-            <div className="lg:col-span-3">
-              <h2 className="text-2xl font-semibold tracking-[-0.28px]">Create contract</h2>
-              <p className="mt-1 text-sm leading-6 text-muted">Use an accepted priced bid to create the backend contract for this assigned post.</p>
+          <div className="grid gap-4 md:grid-cols-[1fr_180px_auto] md:items-end">
+            <div>
+              <h2 className="text-xl font-semibold">Boost bid ranking</h2>
+              <p className="mt-1 text-sm text-muted">Higher boost spend ranks this bid higher for the shipper. The owner sees only a boosted label.</p>
             </div>
-            <Field error={contractForm.formState.errors.acceptedBidId} label="Accepted bid" required>
-              <Select {...contractForm.register("acceptedBidId")}>
-                {acceptedBids.map((bid) => (
-                  <option key={bid.id} value={bid.id}>
-                    {formatCurrency(bid.offeredPriceAmount, bid.currency)} - {bid.id.slice(0, 8)}
-                  </option>
-                ))}
-              </Select>
+            <Field label="Credits">
+              <Input min={1} onChange={(event) => setBoostCredits(event.target.value)} type="number" value={boostCredits} />
             </Field>
-            <Field error={contractForm.formState.errors.pickupPlannedAt} label="Pickup planned">
-              <Input {...contractForm.register("pickupPlannedAt")} type="datetime-local" />
-            </Field>
-            <Field error={contractForm.formState.errors.deliveryPlannedAt} label="Delivery planned">
-              <Input {...contractForm.register("deliveryPlannedAt")} type="datetime-local" />
-            </Field>
-            <div className="lg:col-span-3">
-              <Button disabled={createContractMutation.isPending} type="submit">
-                <BriefcaseBusiness className="size-4" />
-                Create contract
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={boostBidMutation.isPending || Number(boostCredits) < 1} onClick={() => boostBidMutation.mutate()} type="button">
+                Boost bid
+              </Button>
+              <Button onClick={() => setBoostBidTarget(null)} type="button" variant="ghost">
+                Cancel
               </Button>
             </div>
-          </form>
+          </div>
         </Surface>
       ) : null}
 
@@ -513,7 +580,12 @@ export function PostDetailPage() {
                   <tr>
                     <Td>{bid.message ?? "No message"}</Td>
                     <Td>{bid.offeredPriceAmount ? formatCurrency(bid.offeredPriceAmount, bid.currency) : bid.currency}</Td>
-                    <Td><StatusBadge tone={bidTone(bid.status)}>{humanizeEnum(bid.status)}</StatusBadge></Td>
+                    <Td>
+                      <div className="flex flex-wrap gap-2">
+                        <StatusBadge tone={bidTone(bid.status)}>{humanizeEnum(bid.status)}</StatusBadge>
+                        {isBidBoosted(bid) ? <StatusBadge tone="success">Boosted bid</StatusBadge> : null}
+                      </div>
+                    </Td>
                     <Td>
                       <div className="flex flex-wrap gap-2">
                         {canDecideCurrentBid ? (
@@ -541,6 +613,10 @@ export function PostDetailPage() {
                             </Button>
                             <Button className="h-9 min-h-9 px-4" onClick={() => setPendingBidAction({ bidId: bid.id, status: "WITHDRAWN" })} type="button" variant="secondary">
                               Withdraw
+                            </Button>
+                            <Button className="h-9 min-h-9 px-4" onClick={() => setBoostBidTarget(bid)} type="button" variant="secondary">
+                              <Rocket className="size-4" />
+                              Boost
                             </Button>
                             <Button className="h-9 min-h-9 px-4" disabled={deleteBidMutation.isPending} onClick={() => deleteBidMutation.mutate(bid.id)} type="button" variant="danger">
                               Delete
@@ -588,9 +664,13 @@ export function PostDetailPage() {
                       <td className="border-b border-border px-4 py-4" colSpan={4}>
                         <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-pearl p-4 md:flex-row md:items-center md:justify-between">
                           <div>
-                            <p className="text-sm font-semibold text-foreground">Confirm bid action</p>
+                            <p className="text-sm font-semibold text-foreground">
+                              {pendingBidAction.status === "ACCEPTED" ? "Accept bid and create contract?" : "Confirm bid action"}
+                            </p>
                             <p className="mt-1 text-sm text-muted">
-                              Confirm {humanizeEnum(pendingBidAction.status).toLowerCase()} for bid {bid.id.slice(0, 8)}.
+                              {pendingBidAction.status === "ACCEPTED"
+                                ? `Bid ${bid.id.slice(0, 8)} will become the contract automatically and competing pending bids will close.`
+                                : `Confirm ${humanizeEnum(pendingBidAction.status).toLowerCase()} for bid ${bid.id.slice(0, 8)}.`}
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-2">

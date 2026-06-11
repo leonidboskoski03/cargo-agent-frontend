@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreditCard, WalletCards } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   createJobSeekerCheckoutSession,
   getJobSeekerUsage,
@@ -7,12 +8,14 @@ import {
   listJobSeekerCreditPacks,
   listJobSeekerTransactions,
 } from "@/shared/api/modules/jobSeekerBilling";
+import { getBillingReadiness } from "@/shared/api/modules/billingReadiness";
 import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { humanizeEnum } from "@/shared/lib/formatters";
 import { useAuthStore } from "@/features/auth/authStore";
+import { BillingProviderBanner } from "@/features/billing/BillingProviderBanner";
 
 function idempotencyKey(packCode: string) {
   const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}`;
@@ -20,8 +23,11 @@ function idempotencyKey(packCode: string) {
 }
 
 export function JobWalletPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
+  const readinessQuery = useQuery({ enabled: user?.role === "JOB_SEEKER", queryFn: getBillingReadiness, queryKey: ["billing", "readiness"], staleTime: 1000 * 30 });
   const walletQuery = useQuery({ enabled: user?.role === "JOB_SEEKER", queryFn: getJobSeekerWallet, queryKey: ["job-seeker-billing", "wallet"] });
   const usageQuery = useQuery({ enabled: user?.role === "JOB_SEEKER", queryFn: getJobSeekerUsage, queryKey: ["job-seeker-billing", "usage"] });
   const packsQuery = useQuery({ queryFn: () => listJobSeekerCreditPacks({ activeOnly: true }), queryKey: ["job-seeker-billing", "packs"] });
@@ -36,6 +42,7 @@ export function JobWalletPage() {
     onSuccess: (session) => {
       void queryClient.invalidateQueries({ queryKey: ["job-seeker-billing"] });
       if (session.checkoutUrl) window.location.assign(session.checkoutUrl);
+      else navigate(`/job-wallet/checkout/${session.checkoutSessionId}`);
     },
   });
 
@@ -61,11 +68,24 @@ export function JobWalletPage() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Job seeker billing"
-        subtitle="Track free quota, credit balance, credit packs, and promotion or application spend."
+        subtitle="Included quota is used first, then credits are spent for applications, listings, vehicle posts, and promotions."
         title="Job wallet"
       />
+      {searchParams.get("checkout") === "canceled" ? (
+        <Surface className="border-amber-100 bg-amber-50">
+          <p className="text-sm font-semibold text-amber-900">Stripe checkout was canceled.</p>
+          <p className="mt-1 text-sm text-amber-800">No job credits were purchased. You can choose a pack and start checkout again.</p>
+        </Surface>
+      ) : null}
+      <BillingProviderBanner context="job-wallet" readiness={readinessQuery.data} />
+      {readinessQuery.error ? (
+        <ErrorState description="Billing readiness could not be loaded. Checkout errors will still include trace IDs." error={readinessQuery.error} title="Job wallet readiness unavailable" />
+      ) : null}
+      {checkoutMutation.error ? (
+        <ErrorState description="Job wallet checkout could not be started. Check Stripe sandbox price setup and webhook readiness." error={checkoutMutation.error} title="Unable to start checkout" />
+      ) : null}
 
-      <section className="grid gap-4 lg:grid-cols-3">
+      <section className="grid gap-4 lg:grid-cols-4">
         <Surface>
           <WalletCards className="size-5 text-primary" aria-hidden="true" />
           <h2 className="mt-3 text-xl font-semibold">{wallet?.balanceCredits ?? 0} credits</h2>
@@ -79,7 +99,12 @@ export function JobWalletPage() {
         <Surface>
           <CreditCard className="size-5 text-primary" aria-hidden="true" />
           <h2 className="mt-3 text-xl font-semibold">{usage?.quotas.activeListings.remaining ?? 0} free listings</h2>
-          <p className="mt-1 text-sm text-muted">{usage?.quotas.activeListings.used ?? 0} of {usage?.quotas.activeListings.limit ?? 0} active listing quota used</p>
+          <p className="mt-1 text-sm text-muted">{usage?.quotas.activeListings.creditCostPerAction ?? 2} credits after quota</p>
+        </Surface>
+        <Surface>
+          <CreditCard className="size-5 text-primary" aria-hidden="true" />
+          <h2 className="mt-3 text-xl font-semibold">{usage?.quotas.vehicleListings.remaining ?? 0} vehicle posts</h2>
+          <p className="mt-1 text-sm text-muted">{usage?.quotas.vehicleListings.creditCostPerAction ?? 3} credits after quota</p>
         </Surface>
       </section>
 

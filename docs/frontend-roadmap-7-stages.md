@@ -4,7 +4,7 @@
 
 Build the Cargo Agent frontend in 7 staged releases, using the backend as the source of truth and keeping the app focused on a unified SaaS/marketplace experience for company admins and drivers first.
 
-Current frontend coverage is about 85-90% of the company-logistics MVP surface. Dashboard, locations/routes, posts, contracts, company/team/invites, fleet, billing, documents, notifications, audit logs, reviews, localization/geo catalogs, upload-backed media fields, and release-readiness diagnostics are present. The remaining frontend gap is mostly UAT polish, direct-route smoke proof, and the deferred job-seeker lane.
+Current frontend coverage is about 90-95% of the company-logistics and staging smoke surface. Dashboard, locations/routes, posts, contracts, company/team/invites, fleet, billing, company credits, documents, notifications, audit logs, reviews, localization/geo catalogs, upload-backed media fields, release-readiness diagnostics, job seeker profile/wallet, job listings, checkout result pages, and vehicle marketplace screens are present. The remaining frontend gap is mostly UAT polish, direct-route smoke proof, checkout/provider evidence, and role-specific edge-case cleanup.
 
 The backend MVP module surface is about 95-98% implemented for mounted `/api/v1` modules, but release docs still classify the platform as `NO-GO` because manual UAT, billing/webhook Stripe event evidence, CI proof, delivery-provider validation, and cross-functional signoff are not closed.
 
@@ -107,7 +107,7 @@ Focus: cross-cutting product quality.
 - Add reviews module using `/reviews`, likely after completed contract states.
 - Add global notification badge/count if backend supports it.
 - Add admin release-readiness diagnostics for delivery/storage/billing provider state.
-- Replace raw browser file inputs with shared upload controls for company, vehicle, and license media.
+- Keep shared upload controls consistent for company, vehicle, license, document, and vehicle marketplace media.
 
 Success criteria:
 
@@ -117,19 +117,20 @@ Success criteria:
 
 ## Stage 7: Job Marketplace Lane
 
-Focus: second product lane after company logistics is stable.
+Focus: staging polish for the second product lane now that the first usable slice exists.
 
-- Add job application/company job post flows using `/job-applications`.
-- Add job seeker registration/profile route if backend supports the auth/profile branch.
-- Add job seeker billing/credits using `/job-seeker-billing`.
-- Add job application apply flow with billing metadata.
-- Keep this lane visually related but clearly separated from company logistics.
+- Job application/company job post flows using `/job-applications` are implemented.
+- Job seeker registration/login/profile flow is implemented for independent users without a company workspace.
+- Job seeker billing/credits using `/job-seeker-billing` is implemented, including checkout result route.
+- Job application apply flow includes billing metadata and insufficient-credit handling.
+- Vehicle marketplace browse/detail/create/manage flows are implemented for company admins and job seekers, with drivers browse-only.
+- Remaining work should prioritize UAT polish, direct-route refresh proof, provider-state messaging, and role-specific smoke coverage.
 
 Success criteria:
 
-- Job seeker can enter the platform, manage credits, and apply.
-- Company users can manage job posts/applications.
-- Dual-lane platform becomes visible without confusing company admin/driver workflows.
+- Job seeker can enter the platform, manage profile/credits, apply, and manage owned listings.
+- Company users can manage company job posts/applications and vehicle listings where allowed.
+- Dual-lane platform remains understandable under role-aware navigation.
 
 ## Test Plan
 
@@ -147,7 +148,7 @@ Add focused tests per stage:
 - Stage 4: vehicle/license/assignment forms.
 - Stage 5: subscription actions, billing event table, driver billing denial.
 - Stage 6: documents, notifications, audit-log access rules.
-- Stage 7: job application and job seeker billing validation.
+- Stage 7: job application, job seeker billing, checkout result, vehicle marketplace owner workflow, and role visibility validation.
 
 Manual smoke scenarios:
 
@@ -157,7 +158,7 @@ Manual smoke scenarios:
 - Admin manages fleet and vehicle assignments.
 - Admin completes Stripe sandbox checkout and sees subscription/billing state.
 - Notifications/documents/audit logs show expected platform activity.
-- Job seeker lane works only after company lane is stable.
+- Job seeker lane works with profile, wallet, job application, and vehicle marketplace smoke flows.
 
 ## Assumptions
 
@@ -165,5 +166,6 @@ Manual smoke scenarios:
 - `DESIGN.md`, `AGENTS.md`, `$frontend-design`, `$ui-ux-pro-max`, `$web-design-guidelines`, and light `$huashu-design` motion guidance remain mandatory.
 - Backend stays at `VITE_API_BASE_URL=http://localhost:4000/api/v1`.
 - Company admin/driver workflows remain first priority.
-- Job seeker UI stays deferred until company logistics and MVP release gates are complete.
+- Job seeker UI is implemented enough for staging smoke; future work should avoid broad expansion until MVP release evidence is collected.
 - OTP and invite delivery stay designed as real delivery UX, even while backend delivery is simulated or placeholder.
+- Stripe sandbox checkout remains test-mode until release evidence is captured.

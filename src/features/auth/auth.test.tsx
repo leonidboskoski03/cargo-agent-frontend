@@ -7,13 +7,18 @@ import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import { useAuthStore } from "@/features/auth/authStore";
 import { InviteAcceptPage } from "@/features/invites/InviteAcceptPage";
 import { RegistrationStartPage } from "@/features/registration/RegistrationStartPage";
+import { ForgotPasswordPage } from "./ForgotPasswordPage";
 import { LoginPage } from "./LoginPage";
 import { inviteAcceptSchema, loginSchema, registrationStartSchema } from "./authSchemas";
 
 const authApi = vi.hoisted(() => ({
+  forgotPassword: vi.fn(),
+  login: vi.fn(),
+  loginVerifyOtp: vi.fn(),
   logout: vi.fn(),
   refreshSession: vi.fn(),
   register: vi.fn(),
+  resetPassword: vi.fn(),
   requestOtp: vi.fn(),
   resendOtp: vi.fn(),
   verifyOtp: vi.fn(),
@@ -29,9 +34,13 @@ const usersApi = vi.hoisted(() => ({
 
 vi.mock("@/shared/api/modules/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/shared/api/modules/auth")>()),
+  forgotPassword: authApi.forgotPassword,
+  login: authApi.login,
+  loginVerifyOtp: authApi.loginVerifyOtp,
   logout: authApi.logout,
   refreshSession: authApi.refreshSession,
   register: authApi.register,
+  resetPassword: authApi.resetPassword,
   requestOtp: authApi.requestOtp,
   resendOtp: authApi.resendOtp,
   verifyOtp: authApi.verifyOtp,
@@ -55,6 +64,16 @@ const adminUser = {
   isActive: true,
   lastName: "Admin",
   role: "COMPANY_ADMIN" as const,
+};
+
+const jobSeekerUser = {
+  companyId: null,
+  email: "job@cargo.test",
+  firstName: "Job",
+  id: "user_job",
+  isActive: true,
+  lastName: "Seeker",
+  role: "JOB_SEEKER" as const,
 };
 
 describe("auth validation", () => {
@@ -116,6 +135,23 @@ describe("protected route", () => {
     );
 
     expect(screen.getByText("Private workspace")).toBeInTheDocument();
+  });
+
+  it("allows job seekers through protected routes", () => {
+    useAuthStore.setState({ status: "authenticated", user: jobSeekerUser });
+
+    render(
+      <MemoryRouter initialEntries={["/job-profile"]}>
+        <Routes>
+          <Route element={<ProtectedRoute />}>
+            <Route element={<div>Job profile workspace</div>} path="/job-profile" />
+          </Route>
+          <Route element={<div>Login screen</div>} path="/login" />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Job profile workspace")).toBeInTheDocument();
   });
 
   it("keeps contract routes protected", () => {
@@ -222,6 +258,40 @@ describe("registration wizard", () => {
 
     expect(screen.getByPlaceholderText("you@company.com")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Enter your password")).toBeInTheDocument();
+  });
+
+  it("resets password with email OTP and confirmation password", async () => {
+    authApi.forgotPassword.mockResolvedValue({
+      challengeId: "challenge_12345678",
+      code: "123456",
+      expiresAt: "",
+      message: "If the account exists, an OTP challenge has been generated",
+      nextAction: { purpose: "FORGOT_PASSWORD", type: "VERIFY_OTP" },
+    });
+    authApi.verifyOtp.mockResolvedValue({ challengeId: "challenge_12345678", channel: "EMAIL", nextAction: { type: "VERIFIED" }, purpose: "FORGOT_PASSWORD" });
+    authApi.resetPassword.mockResolvedValue({ message: "Password reset successful. Please log in again" });
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <ForgotPasswordPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await userEvent.type(screen.getByPlaceholderText("you@company.com"), "job@cargo.test");
+    await userEvent.click(screen.getByRole("button", { name: /send reset code/i }));
+
+    expect(await screen.findByText(/local preview code/i)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("OTP code"), "123456");
+    await userEvent.type(screen.getByLabelText("New password"), "NewPass123!");
+    await userEvent.type(screen.getByLabelText("Confirm password"), "NewPass123!");
+    await userEvent.click(screen.getByRole("button", { name: /reset password/i }));
+
+    expect(authApi.verifyOtp).toHaveBeenCalledWith({ challengeId: "challenge_12345678", code: "123456" });
+    expect(authApi.resetPassword).toHaveBeenCalledWith({ newPassword: "NewPass123!", otpChallengeId: "challenge_12345678" });
+    expect(await screen.findByText("Password updated")).toBeInTheDocument();
   });
 
   it("starts on the admin account step", () => {

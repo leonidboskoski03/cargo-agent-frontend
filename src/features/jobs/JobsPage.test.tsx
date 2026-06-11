@@ -7,16 +7,22 @@ import { useAuthStore } from "@/features/auth/authStore";
 import { JobsPage } from "./JobsPage";
 
 const jobApi = vi.hoisted(() => ({
+  deleteJobApplication: vi.fn(),
   listJobApplications: vi.fn(),
   listMyJobApplications: vi.fn(),
   promoteJobApplication: vi.fn(),
+  restoreJobApplication: vi.fn(),
+  updateJobApplication: vi.fn(),
 }));
 
 vi.mock("@/shared/api/modules/jobApplications", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/shared/api/modules/jobApplications")>()),
+  deleteJobApplication: jobApi.deleteJobApplication,
   listJobApplications: jobApi.listJobApplications,
   listMyJobApplications: jobApi.listMyJobApplications,
   promoteJobApplication: jobApi.promoteJobApplication,
+  restoreJobApplication: jobApi.restoreJobApplication,
+  updateJobApplication: jobApi.updateJobApplication,
 }));
 
 const jobSeekerUser = {
@@ -80,6 +86,9 @@ describe("JobsPage", () => {
       },
     ]);
     jobApi.listMyJobApplications.mockResolvedValue([]);
+    jobApi.updateJobApplication.mockResolvedValue({});
+    jobApi.deleteJobApplication.mockResolvedValue({});
+    jobApi.restoreJobApplication.mockResolvedValue({});
   });
 
   it("renders job listings with readable statuses and client filters", async () => {
@@ -94,5 +103,67 @@ describe("JobsPage", () => {
 
     expect(screen.queryByText("Driver for regional work")).not.toBeInTheDocument();
     expect(screen.getByText("Closed listing")).toBeInTheDocument();
+  });
+
+  it("shows owner edit, status, delete, and restore controls on my listings", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    jobApi.listMyJobApplications.mockResolvedValue([
+      {
+        createdAt: "",
+        createdByCompany: null,
+        createdByCompanyId: null,
+        createdByUserId: jobSeekerUser.id,
+        currency: "EUR",
+        deletedAt: null,
+        description: "Available for refrigerated routes.",
+        expectedPayAmount: 1600,
+        id: "job_owned",
+        isPromoted: false,
+        preferredCity: "Prilep",
+        preferredCountryCode: "MK",
+        promotedUntil: null,
+        status: "OPEN",
+        title: "Owner listing",
+        updatedAt: "",
+      },
+      {
+        createdAt: "",
+        createdByCompany: null,
+        createdByCompanyId: null,
+        createdByUserId: jobSeekerUser.id,
+        currency: "EUR",
+        deletedAt: "2026-06-08T00:00:00.000Z",
+        description: "Old listing.",
+        expectedPayAmount: null,
+        id: "job_deleted",
+        isPromoted: false,
+        preferredCity: null,
+        preferredCountryCode: null,
+        promotedUntil: null,
+        status: "CLOSED",
+        title: "Deleted listing",
+        updatedAt: "",
+      },
+    ]);
+
+    renderPage("mine");
+
+    expect(await screen.findByText("Owner listing")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /edit owner listing/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete owner listing/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /restore deleted listing/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /edit owner listing/i }));
+    await userEvent.clear(screen.getByLabelText("Edit job title"));
+    await userEvent.type(screen.getByLabelText("Edit job title"), "Updated owner listing");
+    await userEvent.click(screen.getByRole("button", { name: /save owner listing/i }));
+
+    expect(jobApi.updateJobApplication).toHaveBeenCalledWith("job_owned", expect.objectContaining({ title: "Updated owner listing" }));
+
+    await userEvent.click(screen.getByRole("button", { name: /delete owner listing/i }));
+    expect(jobApi.deleteJobApplication.mock.calls.at(-1)?.[0]).toBe("job_owned");
+
+    await userEvent.click(screen.getByRole("button", { name: /restore deleted listing/i }));
+    expect(jobApi.restoreJobApplication.mock.calls.at(-1)?.[0]).toBe("job_deleted");
   });
 });

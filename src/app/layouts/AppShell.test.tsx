@@ -65,6 +65,18 @@ function renderShell(initialPath = "/dashboard") {
   );
 }
 
+async function closePinnedSidebarIfOpen() {
+  const unpinButton = screen.queryByRole("button", { name: "Unpin sidebar" });
+  if (!unpinButton) return;
+  await userEvent.click(unpinButton);
+  await waitFor(() => expect(screen.queryByTestId("secondary-nav-panel")).not.toBeInTheDocument());
+}
+
+async function pinSidebarIfClosed() {
+  const pinButton = screen.queryByRole("button", { name: "Pin sidebar" });
+  if (pinButton) await userEvent.click(pinButton);
+}
+
 describe("AppShell navigation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -77,13 +89,14 @@ describe("AppShell navigation", () => {
 
   it("syncs direct fleet license routes into the rail and opens the fleet panel when pinned", async () => {
     renderShell("/fleet/licenses");
+    await closePinnedSidebarIfOpen();
 
-    expect(await screen.findByRole("heading", { name: "Fleet" })).toBeInTheDocument();
     expect(screen.queryByTestId("secondary-nav-panel")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Fleet" })).toHaveAttribute("aria-current", "page");
 
-    await userEvent.click(screen.getByRole("button", { name: "Pin sidebar" }));
+    await pinSidebarIfClosed();
 
+    expect(await screen.findByRole("heading", { name: "Fleet" })).toBeInTheDocument();
     const panel = screen.getByTestId("secondary-nav-panel");
     expect(within(panel).getByRole("link", { name: /Licenses/i })).toBeInTheDocument();
   });
@@ -91,7 +104,7 @@ describe("AppShell navigation", () => {
   it("opens a clicked rail section and keeps the panel open", async () => {
     renderShell("/dashboard");
 
-    await userEvent.click(screen.getByRole("button", { name: "Pin sidebar" }));
+    await pinSidebarIfClosed();
     await userEvent.click(screen.getByRole("button", { name: "Open Planning" }));
 
     expect(await screen.findByRole("heading", { name: "Planning" })).toBeInTheDocument();

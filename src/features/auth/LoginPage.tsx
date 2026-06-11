@@ -1,14 +1,15 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowRight, Mail, Shield } from "lucide-react";
+import { ArrowRight, LockKeyhole, Mail, Shield } from "lucide-react";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { login, loginVerifyOtp, verifyOtp } from "@/shared/api/modules/auth";
 import { getMe } from "@/shared/api/modules/users";
 import { Button } from "@/shared/components/ui/Button";
-import { Field, Input } from "@/shared/components/ui/Form";
+import { Field } from "@/shared/components/ui/Form";
+import { OtpCodeInput } from "@/shared/components/ui/OtpCodeInput";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { ApiClientError } from "@/shared/api/apiClient";
 import { useAuthStore } from "./authStore";
@@ -20,6 +21,17 @@ type MfaState = {
   password: string;
 };
 
+function defaultPathForRole(role: string) {
+  return role === "JOB_SEEKER" ? "/job-profile" : "/dashboard";
+}
+
+function resolvePostLoginPath(profile: { role: string }, requestedPath: string) {
+  if (profile.role === "JOB_SEEKER" && (requestedPath === "/" || requestedPath === "/dashboard")) {
+    return "/job-profile";
+  }
+  return requestedPath;
+}
+
 export function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -27,7 +39,7 @@ export function LoginPage() {
   const setUser = useAuthStore((state) => state.setUser);
   const [mfaState, setMfaState] = useState<MfaState | null>(null);
   const fromLocation = (location.state as { from?: { hash?: string; pathname?: string; search?: string } } | null)?.from;
-  const from = fromLocation?.pathname ? `${fromLocation.pathname}${fromLocation.search ?? ""}${fromLocation.hash ?? ""}` : "/dashboard";
+  const from = fromLocation?.pathname ? `${fromLocation.pathname}${fromLocation.search ?? ""}${fromLocation.hash ?? ""}` : null;
 
   const loginForm = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -38,6 +50,7 @@ export function LoginPage() {
     resolver: zodResolver(mfaSchema),
     defaultValues: { code: "" },
   });
+  const mfaCode = useWatch({ control: mfaForm.control, name: "code" });
 
   const loginMutation = useAppMutation({
     mutationFn: login,
@@ -52,7 +65,7 @@ export function LoginPage() {
 
       const profile = await getMe();
       setUser(profile);
-      navigate(from, { replace: true });
+      navigate(resolvePostLoginPath(profile, from ?? defaultPathForRole(profile.role)), { replace: true });
     },
   });
 
@@ -69,7 +82,7 @@ export function LoginPage() {
     },
     onSuccess: (profile) => {
       setUser(profile);
-      navigate(from, { replace: true });
+      navigate(resolvePostLoginPath(profile, from ?? defaultPathForRole(profile.role)), { replace: true });
     },
   });
 
@@ -99,13 +112,18 @@ export function LoginPage() {
           <p className="mt-2 text-sm leading-6 text-muted">
             {mfaState
               ? "Use the OTP delivered through your configured channel. The local preview code is intentionally hidden."
-              : "Use your company account to continue into the operations workspace."}
+              : "Use your Cargo Agent account to continue into the operations workspace."}
           </p>
 
           <div className="mt-6 space-y-4">
             {mfaState ? (
               <Field error={mfaForm.formState.errors.code} label="OTP code" required>
-                <Input autoComplete="one-time-code" inputMode="numeric" {...mfaForm.register("code")} />
+                <OtpCodeInput
+                  autoFocus
+                  disabled={mfaMutation.isPending}
+                  onChange={(code) => mfaForm.setValue("code", code, { shouldDirty: true, shouldValidate: true })}
+                  value={mfaCode}
+                />
               </Field>
             ) : (
               <>
@@ -122,7 +140,16 @@ export function LoginPage() {
                   </span>
                 </Field>
                 <Field error={loginForm.formState.errors.password} label={t("fields.password")} required>
-                  <Input autoComplete="current-password" placeholder="Enter your password" type="password" {...loginForm.register("password")} />
+                  <span className="flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-3 focus-within:border-slate-300">
+                    <LockKeyhole className="size-4 text-muted" />
+                    <input
+                      autoComplete="current-password"
+                      className="w-full bg-transparent text-sm outline-none"
+                      placeholder="Enter your password"
+                      type="password"
+                      {...loginForm.register("password")}
+                    />
+                  </span>
                 </Field>
               </>
             )}
@@ -133,7 +160,10 @@ export function LoginPage() {
             <ArrowRight className="size-4" />
           </Button>
           <Link className="mt-4 block text-center text-sm text-primary" to="/register">
-            Create a company account
+            Create an account
+          </Link>
+          <Link className="mt-3 block text-center text-sm text-muted hover:text-primary" to="/forgot-password">
+            Forgot your password?
           </Link>
         </form>
       </section>

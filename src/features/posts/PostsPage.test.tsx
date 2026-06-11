@@ -121,8 +121,30 @@ describe("PostsPage marketplace filters", () => {
     geoApi.listSupportedCountries.mockResolvedValue([]);
     locationsRoutesApi.listRoutes.mockResolvedValue(routes);
     postsApi.listPosts.mockResolvedValue([
-      post({ id: "post_1", routeId: "route_1", status: "OPEN", title: "Steel coils" }),
-      post({ id: "post_2", routeId: "route_2", status: "CANCELLED", title: "Frozen goods" }),
+      post({
+        companyId: "other_company",
+        id: "post_1",
+        route: {
+          destinationLocation: { city: "Sofia", countryCode: "BG" },
+          id: "other_route_1",
+          originLocation: { city: "Skopje", countryCode: "MK" },
+        },
+        routeId: "other_route_1",
+        status: "OPEN",
+        title: "Steel coils",
+      }),
+      post({
+        companyId: "other_company",
+        id: "post_2",
+        route: {
+          destinationLocation: { city: "Tirana", countryCode: "AL" },
+          id: "other_route_2",
+          originLocation: { city: "Bitola", countryCode: "MK" },
+        },
+        routeId: "other_route_2",
+        status: "OPEN",
+        title: "Frozen goods",
+      }),
     ]);
   });
 
@@ -130,21 +152,24 @@ describe("PostsPage marketplace filters", () => {
     renderPage();
 
     expect(await screen.findByText("Steel coils")).toBeInTheDocument();
+    expect(screen.getByText("Skopje, MK -> Sofia, BG")).toBeInTheDocument();
     expect(screen.getAllByText("Request Quote").length).toBeGreaterThan(0);
+    expect(postsApi.listPosts).toHaveBeenLastCalledWith({ scope: "marketplace" });
 
     await userEvent.type(screen.getByLabelText("Search posts"), "Frozen");
 
     expect(screen.queryByText("Steel coils")).not.toBeInTheDocument();
     expect(screen.getByText("Frozen goods")).toBeInTheDocument();
-    expect(screen.getAllByText("Cancelled").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Open").length).toBeGreaterThan(0);
   });
 
-  it("passes supported status filters to the backend", async () => {
+  it("passes supported status filters to the backend for my posts", async () => {
     renderPage();
 
     await screen.findByText("Steel coils");
+    await userEvent.click(screen.getByRole("button", { name: "My posts" }));
     await userEvent.selectOptions(screen.getByLabelText("Status"), "CANCELLED");
 
-    await waitFor(() => expect(postsApi.listPosts).toHaveBeenLastCalledWith({ status: "CANCELLED" }));
+    await waitFor(() => expect(postsApi.listPosts).toHaveBeenLastCalledWith({ scope: "mine", status: "CANCELLED" }));
   });
 });

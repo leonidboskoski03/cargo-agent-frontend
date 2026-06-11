@@ -5,6 +5,12 @@ export type ContractStatus = "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCEL
 export type ContractRecord = {
   acceptedBidId: string;
   agreedPriceAmount: string;
+  carrierCompany?: {
+    city?: string | null;
+    countryCode?: string | null;
+    id: string;
+    name: string;
+  };
   carrierCompanyId: string;
   createdAt: string;
   currency: string;
@@ -15,7 +21,34 @@ export type ContractRecord = {
   pickupActualAt?: string | null;
   pickupPlannedAt?: string | null;
   postId: string;
+  post?: {
+    cargoDescription?: string | null;
+    id: string;
+    status: string;
+    title?: string | null;
+  };
+  route?: {
+    destinationLocation: {
+      city: string;
+      countryCode: string;
+      id: string;
+    };
+    distanceKm?: number | null;
+    estimatedDurationMinutes?: number | null;
+    id: string;
+    originLocation: {
+      city: string;
+      countryCode: string;
+      id: string;
+    };
+  };
   routeId: string;
+  shipperCompany?: {
+    city?: string | null;
+    countryCode?: string | null;
+    id: string;
+    name: string;
+  };
   shipperCompanyId: string;
   status: ContractStatus;
   updatedAt: string;
@@ -26,6 +59,13 @@ export type CreateContractInput = {
   deliveryPlannedAt?: string;
   pickupPlannedAt?: string;
   postId: string;
+};
+
+export type UpdateContractTimelineInput = {
+  deliveryActualAt?: string;
+  deliveryPlannedAt?: string;
+  pickupActualAt?: string;
+  pickupPlannedAt?: string;
 };
 
 export function listContracts(params?: { status?: ContractStatus }) {
@@ -42,6 +82,10 @@ export function createContract(input: CreateContractInput) {
 
 export function changeContractStatus(contractId: string, status: ContractStatus) {
   return unwrapData<ContractRecord>(apiClient.patch(`/contracts/${contractId}/status`, { status }));
+}
+
+export function updateContractTimeline(contractId: string, input: UpdateContractTimelineInput) {
+  return unwrapData<ContractRecord>(apiClient.patch(`/contracts/${contractId}/timeline`, input));
 }
 
 export function deleteContract(contractId: string) {

@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitBranchPlus, RotateCcw, Save, Trash2 } from "lucide-react";
+import { GitBranchPlus, Map, RotateCcw, Save, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toApiClientError } from "@/shared/api/apiClient";
@@ -12,6 +12,7 @@ import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/sha
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { useAuthStore } from "@/features/auth/authStore";
 import { canManageCompanyPosts } from "@/features/posts/postPermissions";
+import { RouteConnectionMap } from "./RouteConnectionMap";
 import { routeSchema, type RouteFormInput, type RouteFormValues } from "./routeSchemas";
 
 const routeDefaults: RouteFormInput = { destinationLocationId: "", distanceKm: "", estimatedDurationMinutes: "", originLocationId: "" };
@@ -44,6 +45,7 @@ export function RoutesPage() {
   const canManage = canManageCompanyPosts(user?.role);
   const [editing, setEditing] = useState<RouteRecord | null>(null);
   const [deleted, setDeleted] = useState<RouteRecord | null>(null);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const locationsQuery = useQuery({ queryFn: () => listLocations(), queryKey: ["locations"] });
   const routesQuery = useQuery({ queryFn: () => listRoutes(), queryKey: ["routes"] });
   const form = useForm<RouteFormInput, unknown, RouteFormValues>({ resolver: zodResolver(routeSchema), defaultValues: routeDefaults });
@@ -79,10 +81,27 @@ export function RoutesPage() {
   const locations = locationsQuery.data ?? [];
   const routes = routesQuery.data ?? [];
   const estimateError = estimateMutation.error ? toApiClientError(estimateMutation.error) : null;
+  const selectedRoute = routes.find((route) => route.id === selectedRouteId) ?? null;
+  const selectedOrigin = locations.find((location) => location.id === selectedOriginLocationId);
+  const selectedDestination = locations.find((location) => location.id === selectedDestinationLocationId);
+  const draftRoute: RouteRecord | null = selectedOrigin && selectedDestination && selectedOrigin.id !== selectedDestination.id ? {
+    createdAt: "",
+    deletedAt: null,
+    destinationLocation: selectedDestination,
+    destinationLocationId: selectedDestination.id,
+    distanceKm: null,
+    estimatedDurationMinutes: null,
+    id: "draft-route-preview",
+    isActive: true,
+    originLocation: selectedOrigin,
+    originLocationId: selectedOrigin.id,
+    updatedAt: "",
+  } : null;
+  const mapRoute = draftRoute ?? selectedRoute ?? routes[0] ?? null;
 
   return (
-    <div className="space-y-6">
-      <PageHeader eyebrow="Route planning" subtitle="Build company-private origin and destination lanes from reusable locations." title="Routes" />
+    <div className="space-y-2">
+      <PageHeader subtitle="Build company-private origin and destination lanes from reusable locations." title="Routes" />
 
       {deleted && canManage ? (
         <Surface className="flex flex-col gap-3 border-amber-200 bg-amber-50 md:flex-row md:items-center md:justify-between">
@@ -110,6 +129,11 @@ export function RoutesPage() {
                 <Field error={form.formState.errors.estimatedDurationMinutes} label="Duration minutes"><Input {...form.register("estimatedDurationMinutes")} inputMode="numeric" type="number" /></Field>
               </div>
               {estimateMutation.isPending ? <p className="text-xs text-muted">Calculating truck route...</p> : null}
+              {estimateMutation.data ? (
+                <p className="rounded-lg bg-surface-pearl px-3 py-2 text-xs font-semibold text-muted">
+                  {estimateMutation.data.provider} / {estimateMutation.data.profile}: {estimateMutation.data.distanceKm} km, {formatDuration(estimateMutation.data.estimatedDurationMinutes)}
+                </p>
+              ) : null}
               {estimateError ? <p className="text-xs text-muted">Auto-estimate unavailable: {estimateError.message}{estimateError.traceId ? ` Trace ID: ${estimateError.traceId}` : ""}</p> : null}
               <div className="flex flex-wrap gap-2">
                 <Button disabled={createMutation.isPending || updateMutation.isPending || locations.length < 2} type="submit"><Save className="size-4" /> {editing ? "Save route" : "Add route"}</Button>
@@ -127,6 +151,7 @@ export function RoutesPage() {
 
         <Surface>
           <h2 className="text-2xl font-semibold tracking-normal">Route registry</h2>
+          <RouteConnectionMap className="mt-5" route={mapRoute} />
           <div className="mt-5">
             {routes.length === 0 ? (
               <EmptyState description="Create at least two locations, then connect them as a route before publishing transport posts." title="No routes yet" />
@@ -143,6 +168,7 @@ export function RoutesPage() {
                       <Td>
                         {canManage ? (
                           <div className="flex flex-wrap gap-2">
+                            <Button className="h-9 min-h-9 px-4" onClick={() => setSelectedRouteId(route.id)} type="button" variant="secondary"><Map className="size-4" /> Map</Button>
                             <Button className="h-9 min-h-9 px-4" onClick={() => setEditing(route)} type="button" variant="secondary">Edit</Button>
                             <Button className="h-9 min-h-9 px-4" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(route.id)} type="button" variant="danger"><Trash2 className="size-4" /> Delete</Button>
                           </div>

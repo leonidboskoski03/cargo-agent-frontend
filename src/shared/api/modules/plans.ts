@@ -6,7 +6,7 @@ export type PlanRecord = {
   billingInterval: "MONTHLY" | "YEARLY" | null;
   code: PlanCode;
   currency: string | null;
-  features: {
+  features?: {
     analytics: boolean;
     promotedPosts: boolean;
     routeAlerts: boolean;

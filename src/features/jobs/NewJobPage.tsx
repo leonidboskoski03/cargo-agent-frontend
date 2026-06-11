@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Plus } from "lucide-react";
+import { ArrowLeft, CreditCard, Plus } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 import { createJobApplication } from "@/shared/api/modules/jobApplications";
@@ -35,9 +35,11 @@ export function NewJobPage() {
     },
   });
 
-  if (user?.role !== "JOB_SEEKER") {
-    return <ErrorState description="Only job seekers can create independent job marketplace listings." title="Job seeker access required" />;
+  if (user?.role !== "JOB_SEEKER" && user?.role !== "COMPANY_ADMIN") {
+    return <ErrorState description="Only job seekers and company admins can create job marketplace listings." title="Job marketplace access required" />;
   }
+
+  const isCompanyAdmin = user.role === "COMPANY_ADMIN";
 
   return (
     <div className="space-y-6">
@@ -47,9 +49,19 @@ export function NewJobPage() {
       </Link>
       <PageHeader
         eyebrow="Job marketplace"
-        subtitle="Create an independent listing that companies can discover and respond to."
-        title="Create job listing"
+        subtitle={isCompanyAdmin ? "Publish a company job post that independent drivers can apply to." : "Create an independent listing that companies can discover and respond to."}
+        title={isCompanyAdmin ? "Create company job post" : "Create job listing"}
       />
+
+      <Surface className="flex items-start gap-3 border-blue-100 bg-blue-50">
+        <CreditCard className="mt-0.5 size-5 text-primary" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-semibold text-foreground">Publishing uses included quota first.</p>
+          <p className="mt-1 text-sm leading-6 text-muted">
+            {isCompanyAdmin ? "Company job posts cost 2 company credits after the monthly included quota." : "Job seeker listings cost 2 credits after your included active listing quota."}
+          </p>
+        </div>
+      </Surface>
 
       <Surface>
         <form className="grid gap-4 lg:grid-cols-2" onSubmit={form.handleSubmit((values) => createMutation.mutate(values))}>

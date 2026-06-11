@@ -1,12 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Filter, GitBranchPlus, Plus } from "lucide-react";
+import { CreditCard, Filter, GitBranchPlus, Plus, Rocket } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { listSupportedCountries } from "@/shared/api/modules/geo";
 import { createLocation, createRoute, listRoutes } from "@/shared/api/modules/locationsRoutes";
-import { changePostStatus, createPost, deletePost, listPosts, restorePost, type PostStatus } from "@/shared/api/modules/posts";
+import { boostPost, changePostStatus, createPost, deletePost, listPosts, restorePost, type PostRecord, type PostScope, type PostStatus } from "@/shared/api/modules/posts";
 import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
 import { Field, Input, Select, Textarea } from "@/shared/components/ui/Form";
@@ -25,7 +25,11 @@ type PostsPageProps = {
 const currencyOptions = ["EUR", "MKD", "BGN", "RSD", "ALL", "TRY", "RON", "BAM"];
 const postStatuses: Array<PostStatus | "ALL"> = ["ALL", "OPEN", "ASSIGNED", "CANCELLED", "EXPIRED"];
 
-function formatRoute(routeId: string, routes: Awaited<ReturnType<typeof listRoutes>>) {
+function formatPostRoute(post: PostRecord, routes: Awaited<ReturnType<typeof listRoutes>>) {
+  if (post.route) {
+    return `${post.route.originLocation.city}, ${post.route.originLocation.countryCode} -> ${post.route.destinationLocation.city}, ${post.route.destinationLocation.countryCode}`;
+  }
+  const routeId = post.routeId;
   const route = routes.find((item) => item.id === routeId);
   if (!route) return routeId.slice(0, 8);
   return `${route.originLocation.city} -> ${route.destinationLocation.city}`;
@@ -38,17 +42,23 @@ function postTone(status: string) {
   return "neutral";
 }
 
+function isPostBoosted(post: PostRecord) {
+  return Boolean(post.promotedUntil && new Date(post.promotedUntil) > new Date());
+}
+
 export function PostsPage({ mode = "planned" }: PostsPageProps) {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const isAdmin = canManageCompanyPosts(user?.role);
+  const requestedScope = searchParams.get("scope");
+  const scope: PostScope = requestedScope === "mine" ? "mine" : "marketplace";
   const requestedStatus = searchParams.get("status");
-  const status = postStatuses.includes(requestedStatus as PostStatus) && requestedStatus !== "ALL" ? requestedStatus as PostStatus : null;
+  const status = scope === "mine" && postStatuses.includes(requestedStatus as PostStatus) && requestedStatus !== "ALL" ? requestedStatus as PostStatus : null;
   const selectedStatus = status ?? "ALL";
   const selectedRouteId = searchParams.get("routeId") ?? "";
   const search = searchParams.get("q") ?? "";
-  const postsQuery = useQuery({ queryFn: () => listPosts(status ? { status } : undefined), queryKey: ["posts", status ?? "ALL"] });
+  const postsQuery = useQuery({ queryFn: () => listPosts({ scope, ...(status ? { status } : {}) }), queryKey: ["posts", scope, status ?? "ALL"] });
   const routesQuery = useQuery({ queryFn: () => listRoutes(), queryKey: ["routes"] });
   const countriesQuery = useQuery({ queryFn: listSupportedCountries, queryKey: ["geo", "countries"], staleTime: 1000 * 60 * 30 });
   const routes = routesQuery.data ?? [];
@@ -56,15 +66,16 @@ export function PostsPage({ mode = "planned" }: PostsPageProps) {
   const countries = countriesQuery.data ?? [];
   const filteredPosts = posts.filter((post) => {
     const searchNeedle = search.trim().toLowerCase();
-    const matchesRoute = !selectedRouteId || post.routeId === selectedRouteId;
+    const matchesRoute = scope === "marketplace" || !selectedRouteId || post.routeId === selectedRouteId;
     const matchesSearch = !searchNeedle || `${post.title ?? ""} ${post.cargoDescription ?? ""} ${post.description ?? ""}`.toLowerCase().includes(searchNeedle);
     return matchesRoute && matchesSearch;
   });
 
-  const updateFilter = (key: "q" | "routeId" | "status", value: string) => {
+  const updateFilter = (key: "q" | "routeId" | "scope" | "status", value: string) => {
     const next = new URLSearchParams(searchParams);
     if (!value || value === "ALL") next.delete(key);
     else next.set(key, value);
+    if (key === "scope") next.delete("routeId");
     setSearchParams(next);
   };
 
@@ -107,6 +118,12 @@ export function PostsPage({ mode = "planned" }: PostsPageProps) {
   const statusMutation = useAppMutation({
     messages: { success: "Post status updated" },
     mutationFn: ({ postId, status }: { postId: string; status: "CANCELLED" | "OPEN" }) => changePostStatus(postId, status),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["posts"] }),
+  });
+
+  const boostMutation = useAppMutation({
+    messages: { success: "Post boosted" },
+    mutationFn: boostPost,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["posts"] }),
   });
 
@@ -167,16 +184,37 @@ export function PostsPage({ mode = "planned" }: PostsPageProps) {
   return (
     <div className="space-y-6">
       <PageHeader
-        action={isAdmin ? <Button disabled={routes.length === 0} form="create-post-form" type="submit"><Plus className="size-4" /> Create post</Button> : null}
-        eyebrow="Company marketplace"
-        subtitle={mode === "quick" ? "Create a route and post in one quick workflow." : "Reuse planned company routes for repeatable transport posts."}
+        action={isAdmin && scope === "mine" ? <Button disabled={routes.length === 0} form="create-post-form" type="submit"><Plus className="size-4" /> Create post</Button> : null}
+        subtitle={scope === "marketplace" ? "Browse open transport demand from other companies and submit bids." : mode === "quick" ? "Create a route and post in one quick workflow." : "Reuse planned company routes for repeatable transport posts."}
         title={mode === "quick" ? "Quick route post" : "Planned transport posts"}
       />
 
-      {isAdmin ? (
+      <Surface className="flex flex-wrap gap-2 p-2">
+        <Button onClick={() => updateFilter("scope", "marketplace")} type="button" variant={scope === "marketplace" ? "primary" : "ghost"}>
+          Marketplace
+        </Button>
+        <Button onClick={() => updateFilter("scope", "mine")} type="button" variant={scope === "mine" ? "primary" : "ghost"}>
+          My posts
+        </Button>
+      </Surface>
+
+      {isAdmin && scope === "mine" ? (
+        <Surface className="flex items-start gap-3 border-blue-100 bg-blue-50">
+          <CreditCard className="mt-0.5 size-5 text-primary" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-semibold text-foreground">Publishing uses included active-post quota first.</p>
+            <p className="mt-1 text-sm leading-6 text-muted">Transport posts cost 2 company credits after the current plan quota is exceeded.</p>
+          </div>
+        </Surface>
+      ) : null}
+
+      {isAdmin && scope === "mine" ? (
         <div className={mode === "quick" ? "grid gap-5 xl:grid-cols-[0.48fr_0.52fr]" : "grid gap-5"}>
           {mode === "planned" ? <Surface>
-            <form className="grid gap-4 lg:grid-cols-3" id="create-post-form" onSubmit={form.handleSubmit((values) => createMutation.mutate(values))}>
+            <form className="grid gap-4 lg:grid-cols-2" id="create-post-form" onSubmit={form.handleSubmit((values) => createMutation.mutate(values))}>
+              <Field error={form.formState.errors.title} label="Title">
+                <Input {...form.register("title")} placeholder="Skopje to Sofia load" />
+              </Field>
               <Field error={form.formState.errors.routeId} label="Route" required>
                 <Select {...form.register("routeId")}>
                   <option value="">Select route</option>
@@ -187,9 +225,11 @@ export function PostsPage({ mode = "planned" }: PostsPageProps) {
                   ))}
                 </Select>
               </Field>
-              <Field error={form.formState.errors.title} label="Title">
-                <Input {...form.register("title")} placeholder="Skopje to Sofia load" />
+
+              <Field error={form.formState.errors.weightKg} label="Weight kg">
+                <Input {...form.register("weightKg")} inputMode="numeric" type="number" />
               </Field>
+
               <Field error={form.formState.errors.priceType} label="Price type" required>
                 <Select {...form.register("priceType")}>
                   <option value="REQUEST_QUOTE">{humanizeEnum("REQUEST_QUOTE")}</option>
@@ -197,19 +237,17 @@ export function PostsPage({ mode = "planned" }: PostsPageProps) {
                   <option value="NEGOTIABLE">{humanizeEnum("NEGOTIABLE")}</option>
                 </Select>
               </Field>
-              <div className="lg:col-span-2">
+
+              <div className="lg:col-span-1">
                 <Field error={form.formState.errors.priceAmount ?? form.formState.errors.currency} label="Price">
-                  <div className="grid grid-cols-[1fr_7rem] rounded-lg border border-border bg-card shadow-sm focus-within:border-slate-300">
+                  <div className="grid grid-cols-[1fr_0.5fr] rounded-lg border border-border bg-card shadow-sm focus-within:border-slate-300">
                     <input className="h-10 min-w-0 rounded-l-lg bg-transparent px-3 text-sm outline-none" {...form.register("priceAmount")} inputMode="decimal" placeholder="Amount" />
-                    <Select className="rounded-l-none border-0 shadow-none" {...form.register("currency")}>
+                    <Select className="rounded-l-none shadow-none border-l border-border" {...form.register("currency")}>
                       {currencyOptions.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
                     </Select>
                   </div>
                 </Field>
               </div>
-              <Field error={form.formState.errors.weightKg} label="Weight kg">
-                <Input {...form.register("weightKg")} inputMode="numeric" type="number" />
-              </Field>
               <div className="lg:col-span-3">
                 <Field error={form.formState.errors.cargoDescription} label="Cargo description">
                   <Textarea {...form.register("cargoDescription")} placeholder="Describe cargo, constraints, and timing context." />
@@ -291,17 +329,17 @@ export function PostsPage({ mode = "planned" }: PostsPageProps) {
           <Field label="Search posts">
             <Input onChange={(event) => updateFilter("q", event.target.value)} placeholder="Cargo, title, description" value={search} />
           </Field>
-          <Field label="Status">
+          {scope === "mine" ? <Field label="Status">
             <Select onChange={(event) => updateFilter("status", event.target.value)} value={selectedStatus}>
               {postStatuses.map((item) => <option key={item} value={item}>{item === "ALL" ? "All statuses" : humanizeEnum(item)}</option>)}
             </Select>
-          </Field>
-          <Field label="Route">
+          </Field> : null}
+          {scope === "mine" ? <Field label="Route">
             <Select onChange={(event) => updateFilter("routeId", event.target.value)} value={selectedRouteId}>
               <option value="">All routes</option>
               {routes.map((route) => <option key={route.id} value={route.id}>{route.originLocation.city} {"->"} {route.destinationLocation.city}</option>)}
             </Select>
-          </Field>
+          </Field> : null}
           <Button onClick={() => setSearchParams(new URLSearchParams())} type="button" variant="secondary">
             <Filter className="size-4" aria-hidden="true" />
             Clear
@@ -309,7 +347,7 @@ export function PostsPage({ mode = "planned" }: PostsPageProps) {
         </div>
       </Surface>
 
-      {routes.length === 0 ? (
+      {scope === "mine" && routes.length === 0 ? (
         <EmptyState
           action={isAdmin ? <Link className="inline-flex min-h-10 items-center rounded-lg border border-primary bg-card px-4 py-2 text-sm text-primary" to="/routes">Create routes first</Link> : null}
           description={isAdmin ? "A backend route is required before a transport post can be created." : "Your company has not created routes yet. Ask an admin to configure operational routes."}
@@ -317,8 +355,8 @@ export function PostsPage({ mode = "planned" }: PostsPageProps) {
         />
       ) : filteredPosts.length === 0 ? (
         <EmptyState
-          description={posts.length === 0 ? "Create the first transport post to start receiving and managing bids." : "No posts match the current status, route, or search filters."}
-          title={posts.length === 0 ? "No posts yet" : "No matching posts"}
+          description={posts.length === 0 ? (scope === "marketplace" ? "No other companies have open transport posts right now." : "Create the first transport post to start receiving and managing bids.") : "No posts match the current status, route, or search filters."}
+          title={posts.length === 0 ? (scope === "marketplace" ? "No marketplace posts" : "No posts yet") : "No matching posts"}
         />
       ) : (
         <Table>
@@ -338,24 +376,31 @@ export function PostsPage({ mode = "planned" }: PostsPageProps) {
                   <Link className="font-semibold text-primary" to={`/posts/${post.id}`}>
                     {post.title || post.cargoDescription || "Untitled post"}
                   </Link>
+                  {isPostBoosted(post) ? <span className="ml-2 rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-primary">Boosted</span> : null}
                 </Td>
-                <Td>{formatRoute(post.routeId, routes)}</Td>
+                <Td>{formatPostRoute(post, routes)}</Td>
                 <Td><StatusBadge tone={postTone(post.status)}>{humanizeEnum(post.status)}</StatusBadge></Td>
                 <Td>{post.priceAmount ? `${post.priceAmount} ${post.currency}` : humanizeEnum(post.priceType)}</Td>
                 <Td>
-                  {isAdmin ? (
+                  {isAdmin && post.companyId === user?.companyId ? (
                     <div className="flex flex-wrap gap-2">
                       {post.status === "OPEN" ? (
-                        <Button className="h-9 min-h-9 px-4" onClick={() => statusMutation.mutate({ postId: post.id, status: "CANCELLED" })} type="button" variant="secondary">
-                          Cancel
-                        </Button>
+                        <>
+                          <Button className="h-9 min-h-9 px-4" disabled={boostMutation.isPending} onClick={() => boostMutation.mutate(post.id)} type="button" variant="secondary">
+                            <Rocket className="size-4" />
+                            Boost
+                          </Button>
+                          <Button className="h-9 min-h-9 px-4" onClick={() => statusMutation.mutate({ postId: post.id, status: "CANCELLED" })} type="button" variant="secondary">
+                            Cancel
+                          </Button>
+                        </>
                       ) : null}
                       <Button className="h-9 min-h-9 px-4" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(post.id)} type="button" variant="danger">
                         Delete
                       </Button>
                     </div>
                   ) : (
-                    <span className="text-sm text-muted">View only</span>
+                    <Link className="text-sm font-semibold text-primary" to={`/posts/${post.id}`}>Open</Link>
                   )}
                 </Td>
               </tr>

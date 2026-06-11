@@ -1,9 +1,7 @@
 import { ArrowUpRight, Bell, BriefcaseBusiness, Building2, ClipboardCheck, CreditCard, FileText, MapPinned, Star, Truck } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { listBids } from "@/shared/api/modules/bids";
-import { getMyCompany } from "@/shared/api/modules/companies";
 import { listContracts } from "@/shared/api/modules/contracts";
 import { listDocuments } from "@/shared/api/modules/documents";
 import { listNotifications } from "@/shared/api/modules/notifications";
@@ -44,10 +42,8 @@ function profileCompletionMeta(nextBestAction?: string | null) {
 }
 
 export function DashboardPage() {
-  const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
   const isAdmin = user?.role === "COMPANY_ADMIN";
-  const companyQuery = useQuery({ queryFn: () => getMyCompany(), queryKey: ["companies", "me"] });
   const postsQuery = useQuery({ queryFn: () => listPosts(), queryKey: ["posts"] });
   const bidsQuery = useQuery({ queryFn: () => listBids(), queryKey: ["bids"] });
   const contractsQuery = useQuery({ queryFn: () => listContracts(), queryKey: ["contracts"] });
@@ -56,7 +52,6 @@ export function DashboardPage() {
   const documentsQuery = useQuery({ queryFn: () => listDocuments({ pageSize: 20 }), queryKey: ["documents", "dashboard"] });
   const completionQuery = useQuery({ queryFn: () => getMyProfileCompletion(), queryKey: ["users", "me", "profile-completion"] });
 
-  const company = companyQuery.data;
   const posts = postsQuery.data ?? [];
   const bids = bidsQuery.data ?? [];
   const contracts = contractsQuery.data ?? [];
@@ -78,27 +73,17 @@ export function DashboardPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
-        action={
-          isAdmin ? (
-            <Link
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-normal text-primary-foreground transition duration-200 active:scale-95"
-              to="/posts"
-            >
-              {t("dashboard.primaryAction")}
-              <ArrowUpRight className="size-4" />
-            </Link>
-          ) : null
-        }
-        eyebrow={t("dashboard.eyebrow")}
-        subtitle={company ? `${company.name} - ${company.city}, ${company.countryCode}` : t("dashboard.heroBody")}
-        title={t("dashboard.heroTitle")}
+        subtitle={"Plan, prioritize and accomplish your growth!"}
+        title={"Dashboard"}
       />
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={MapPinned} label="Open posts" meta="Ready for bids" value={String(openPosts)} />
-        <StatCard icon={ClipboardCheck} label="Pending bids" meta="Need review or action" value={String(pendingBids)} />
+        <Link className="block rounded-xl transition hover:-translate-y-0.5" to="/bids?scope=all&status=PENDING">
+          <StatCard icon={ClipboardCheck} label="Pending bids" meta="Need review or action" value={String(pendingBids)} />
+        </Link>
         <StatCard icon={BriefcaseBusiness} label="Active contracts" meta="Confirmed or in progress" value={String(activeContracts)} />
         <StatCard icon={Building2} label="Profile completion" meta={profileCompletionMeta(completion?.nextBestAction)} value={`${completion?.percent ?? 0}%`} />
       </section>

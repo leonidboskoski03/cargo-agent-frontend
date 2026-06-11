@@ -1,8 +1,9 @@
-import { CreditCard, ExternalLink, RefreshCcw, RotateCcw, ShieldAlert } from "lucide-react";
+import { CheckCircle2, CreditCard, ExternalLink, RefreshCcw, RotateCcw, ShieldAlert, TriangleAlert, WalletCards } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { listBillingEvents } from "@/shared/api/modules/billingEvents";
+import { getBillingReadiness } from "@/shared/api/modules/billingReadiness";
 import { listPlans, type PlanRecord } from "@/shared/api/modules/plans";
 import {
   cancelSubscriptionAtPeriodEnd,
@@ -18,6 +19,8 @@ import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { toApiClientError } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/features/auth/authStore";
+import { humanizeEnum } from "@/shared/lib/formatters";
+import { BillingProviderBanner } from "./BillingProviderBanner";
 import { billingEventsFilterSchema, cancelReasonSchema, checkoutSchema } from "./billingSchemas";
 import { canManageBilling } from "./billingPermissions";
 
@@ -39,18 +42,58 @@ function statusTone(status?: string | null) {
   return "neutral";
 }
 
-export function BillingPage() {
+function planFeatures(plan: PlanRecord) {
+  return {
+    analytics: plan.features?.analytics ?? false,
+    promotedPosts: plan.features?.promotedPosts ?? false,
+    routeAlerts: plan.features?.routeAlerts ?? false,
+  };
+}
+
+function checkoutIdempotencyKey(planCode: string) {
+  const randomId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`;
+  return `subscription-${planCode}-${randomId}`;
+}
+
+type BillingPageProps = {
+  checkoutReturn?: "canceled" | "success";
+};
+
+function CheckoutReturnBanner({ type }: { type: "canceled" | "success" }) {
+  const success = type === "success";
+  return (
+    <Surface className={success ? "border-green-100 bg-green-50" : "border-amber-100 bg-amber-50"}>
+      <div className="flex items-start gap-3">
+        {success ? (
+          <CheckCircle2 className="mt-0.5 size-5 text-emerald-600" aria-hidden="true" />
+        ) : (
+          <TriangleAlert className="mt-0.5 size-5 text-amber-700" aria-hidden="true" />
+        )}
+        <div>
+          <h2 className="text-sm font-semibold">{success ? "Checkout returned from Stripe" : "Checkout was canceled"}</h2>
+          <p className="mt-1 text-sm leading-6 text-muted">
+            {success
+              ? "Stripe accepted the sandbox checkout. Subscription and credit state update after the webhook is received and processed."
+              : "No payment was completed. You can start checkout again when ready."}
+          </p>
+        </div>
+      </div>
+    </Surface>
+  );
+}
+
+export function BillingPage({ checkoutReturn }: BillingPageProps = {}) {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const canManage = canManageBilling(user?.role);
   const [selectedPlanCode, setSelectedPlanCode] = useState("PRO");
-  const [idempotencyKey, setIdempotencyKey] = useState("");
   const [cancelReason, setCancelReason] = useState("");
   const [eventPage, setEventPage] = useState(1);
   const [eventPageSize, setEventPageSize] = useState(20);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
 
   const plansQuery = useQuery({ queryFn: () => listPlans(), queryKey: ["plans"] });
+  const readinessQuery = useQuery({ queryFn: getBillingReadiness, queryKey: ["billing", "readiness"], staleTime: 1000 * 30 });
   const subscriptionQuery = useQuery({ queryFn: () => getMySubscription(), queryKey: ["subscriptions", "me"] });
   const eventFilters = useMemo(
     () => billingEventsFilterSchema.parse({ page: eventPage, pageSize: eventPageSize }),
@@ -100,7 +143,8 @@ export function BillingPage() {
   const paidPlans = plans.filter((plan) => plan.code !== "FREE");
 
   const startCheckout = () => {
-    const parsed = checkoutSchema.safeParse({ idempotencyKey, planCode: selectedPlanCode });
+    const generatedKey = checkoutIdempotencyKey(selectedPlanCode);
+    const parsed = checkoutSchema.safeParse({ idempotencyKey: generatedKey, planCode: selectedPlanCode });
     if (!parsed.success) {
       setValidationMessage(parsed.error.issues[0]?.message ?? "Check the checkout fields.");
       return;
@@ -128,6 +172,15 @@ export function BillingPage() {
         title="Billing"
       />
 
+      {checkoutReturn ? <CheckoutReturnBanner type={checkoutReturn} /> : null}
+      <BillingProviderBanner context="company-billing" readiness={readinessQuery.data} />
+      {readinessQuery.error ? (
+        <ErrorState
+          description="Billing readiness could not be loaded. Checkout controls can still try the provider, but staging proof should capture this trace."
+          error={readinessQuery.error}
+          title="Billing readiness unavailable"
+        />
+      ) : null}
       {providerError ? (
         <ErrorState
           description="Stripe may be unconfigured locally. Treat provider errors here as expected sandbox feedback until live keys are present."
@@ -140,6 +193,26 @@ export function BillingPage() {
           <p className="text-sm font-semibold text-amber-800">{validationMessage}</p>
         </Surface>
       ) : null}
+
+      <section className="grid gap-4 lg:grid-cols-3">
+        <Surface className="bg-surface-pearl">
+          <CreditCard className="size-5 text-primary" aria-hidden="true" />
+          <h2 className="mt-3 text-base font-semibold">Subscription checkout</h2>
+          <p className="mt-1 text-sm leading-6 text-muted">Upgrade the company workspace to PRO using Stripe sandbox checkout.</p>
+        </Surface>
+        <Surface className="bg-surface-pearl">
+          <WalletCards className="size-5 text-primary" aria-hidden="true" />
+          <h2 className="mt-3 text-base font-semibold">Company credits</h2>
+          <p className="mt-1 text-sm leading-6 text-muted">Buy credits for company job, transport, and vehicle marketplace publishing.</p>
+          <Link className="mt-3 inline-flex text-sm font-semibold text-primary" to="/company-credits">Open company credits</Link>
+        </Surface>
+        <Surface className="bg-surface-pearl">
+          <WalletCards className="size-5 text-primary" aria-hidden="true" />
+          <h2 className="mt-3 text-base font-semibold">Job seeker wallet</h2>
+          <p className="mt-1 text-sm leading-6 text-muted">Job seekers buy personal credits from their own wallet page.</p>
+          <Link className="mt-3 inline-flex text-sm font-semibold text-primary" to="/job-wallet">Open job wallet</Link>
+        </Surface>
+      </section>
 
       <section className="grid gap-5 xl:grid-cols-[0.38fr_0.62fr]">
         <Surface>
@@ -213,7 +286,9 @@ export function BillingPage() {
             <EmptyState description="Plan records from /plans will appear here." title="No plans returned" />
           ) : (
             <div className="grid gap-3 lg:grid-cols-2">
-              {plans.map((plan) => (
+              {plans.map((plan) => {
+                const features = planFeatures(plan);
+                return (
                 <label
                   className="block rounded-xl border border-border bg-surface-pearl p-4 transition has-[:checked]:border-primary has-[:checked]:bg-card"
                   key={plan.code}
@@ -236,24 +311,21 @@ export function BillingPage() {
                     <p className="text-lg font-semibold">{formatMoney(plan)}</p>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                    <StatusBadge tone={plan.features.promotedPosts ? "success" : "neutral"}>Promoted posts</StatusBadge>
-                    <StatusBadge tone={plan.features.analytics ? "success" : "neutral"}>Analytics</StatusBadge>
-                    <StatusBadge tone={plan.features.routeAlerts ? "success" : "neutral"}>Route alerts</StatusBadge>
+                    <StatusBadge tone={features.promotedPosts ? "success" : "neutral"}>Promoted posts</StatusBadge>
+                    <StatusBadge tone={features.analytics ? "success" : "neutral"}>Analytics</StatusBadge>
+                    <StatusBadge tone={features.routeAlerts ? "success" : "neutral"}>Route alerts</StatusBadge>
                   </div>
                 </label>
-              ))}
+              );
+              })}
             </div>
           )}
           {canManage && paidPlans.length > 0 ? (
-            <div className="mt-5 grid gap-3 border-t border-border pt-4 md:grid-cols-[1fr_auto]">
-              <Field description="Optional. Leave blank for a generated backend session." label="Idempotency key">
-                <Input
-                  onChange={(event) => setIdempotencyKey(event.target.value)}
-                  placeholder="checkout key"
-                  value={idempotencyKey}
-                />
-              </Field>
-              <Button className="self-end" disabled={checkoutMutation.isPending} onClick={startCheckout} type="button">
+            <div className="mt-5 flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">
+              <p className="max-w-xl text-sm leading-6 text-muted">
+                Checkout opens in Stripe sandbox. After payment, the webhook can take a moment to update the subscription and billing events.
+              </p>
+              <Button disabled={checkoutMutation.isPending} onClick={startCheckout} type="button">
                 <ExternalLink className="size-4" /> Start checkout
               </Button>
             </div>
@@ -295,8 +367,8 @@ export function BillingPage() {
             <tbody>
               {billingEvents.map((event) => (
                 <tr key={event.id}>
-                  <Td className="font-semibold">{event.eventType}</Td>
-                  <Td><StatusBadge tone={statusTone(event.status)}>{event.status ?? "UNKNOWN"}</StatusBadge></Td>
+                  <Td className="font-semibold">{humanizeEnum(event.eventType)}</Td>
+                  <Td><StatusBadge tone={statusTone(event.status)}>{humanizeEnum(event.status ?? "UNKNOWN")}</StatusBadge></Td>
                   <Td>{event.amount ? `${event.amount} ${event.currency ?? ""}`.trim() : "No amount"}</Td>
                   <Td>{formatDate(event.createdAt)}</Td>
                 </tr>

@@ -63,8 +63,8 @@ export function LocationsPage() {
   const locations = locationsQuery.data ?? [];
 
   return (
-    <div className="space-y-6">
-      <PageHeader eyebrow="Route planning" subtitle="Manage reusable origin and destination points before creating company routes." title="Locations" />
+    <div className="space-y-3">
+      <PageHeader subtitle="Manage reusable origin and destination points before creating company routes." title="Locations" />
 
       {deleted && canManage ? (
         <Surface className="flex flex-col gap-3 border-amber-200 bg-amber-50 md:flex-row md:items-center md:justify-between">

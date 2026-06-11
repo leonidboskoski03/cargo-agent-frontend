@@ -16,13 +16,13 @@ export type Location = {
 export type RouteRecord = {
   createdAt: string;
   deletedAt: string | null;
-  destinationLocation: Pick<Location, "city" | "countryCode" | "deletedAt" | "id">;
+  destinationLocation: Pick<Location, "city" | "countryCode" | "deletedAt" | "id" | "lat" | "lng">;
   destinationLocationId: string;
   distanceKm?: number | null;
   estimatedDurationMinutes?: number | null;
   id: string;
   isActive: boolean;
-  originLocation: Pick<Location, "city" | "countryCode" | "deletedAt" | "id">;
+  originLocation: Pick<Location, "city" | "countryCode" | "deletedAt" | "id" | "lat" | "lng">;
   originLocationId: string;
   updatedAt: string;
 };

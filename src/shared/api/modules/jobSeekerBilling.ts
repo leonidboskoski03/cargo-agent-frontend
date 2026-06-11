@@ -10,11 +10,18 @@ export type JobSeekerUsage = {
   periodStart: string;
   quotas: {
     activeListings: {
+      creditCostPerAction: number;
       limit: number;
       remaining: number;
       used: number;
     };
     applications: {
+      creditCostPerAction: number;
+      limit: number;
+      remaining: number;
+      used: number;
+    };
+    vehicleListings: {
       creditCostPerAction: number;
       limit: number;
       remaining: number;

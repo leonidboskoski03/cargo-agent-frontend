@@ -20,7 +20,9 @@ import {
   Search,
   ShieldCheck,
   Star,
+  Handshake,
   Truck,
+  UserRound,
   Users,
   WalletCards,
   X,
@@ -102,10 +104,13 @@ const navSections: NavSection[] = [
   {
     defaultTo: "/contracts",
     allowedRoles: ["COMPANY_ADMIN", "COMPANY_DRIVER"],
-    icon: BriefcaseBusiness,
-    id: "contracts",
-    items: [{ description: "Accepted bids and active agreements", icon: BriefcaseBusiness, label: "Contracts", to: "/contracts" }],
-    label: "Contracts",
+    icon: Handshake,
+    id: "bids-contracts",
+    items: [
+      { description: "Received and sent route marketplace offers", icon: Handshake, label: "Bids", to: "/bids" },
+      { description: "Accepted bids and active agreements", icon: BriefcaseBusiness, label: "Contracts", to: "/contracts" },
+    ],
+    label: "Bids",
     shortLabel: "Deals",
   },
   {
@@ -113,6 +118,7 @@ const navSections: NavSection[] = [
     icon: BriefcaseBusiness,
     id: "jobs",
     items: [
+      { allowedRoles: ["JOB_SEEKER"], description: "Independent driver profile and readiness", icon: UserRound, label: "Profile", to: "/job-profile" },
       { description: "Lane-aware job marketplace feed", icon: BriefcaseBusiness, label: "Browse jobs", to: "/jobs" },
       { allowedRoles: ["JOB_SEEKER"], description: "Your independent job listings", icon: FileText, label: "My listings", to: "/jobs/mine" },
       { allowedRoles: ["JOB_SEEKER"], description: "Create a job seeker listing", icon: Plus, label: "Create listing", to: "/jobs/new" },
@@ -120,6 +126,21 @@ const navSections: NavSection[] = [
     ],
     label: "Jobs",
     quickAction: { allowedRoles: ["JOB_SEEKER"], description: "Publish an independent listing", icon: Plus, label: "Create listing", to: "/jobs/new" },
+  },
+  {
+    defaultTo: "/vehicle-marketplace",
+    allowedRoles: ["COMPANY_ADMIN", "COMPANY_DRIVER", "JOB_SEEKER"],
+    icon: Truck,
+    id: "vehicle-market",
+    items: [
+      { description: "Browse trucks, trailers, and vans", icon: Truck, label: "Browse vehicles", to: "/vehicle-marketplace" },
+      { allowedRoles: ["COMPANY_ADMIN", "JOB_SEEKER"], description: "Publish a sale or rental listing", icon: Plus, label: "Create listing", to: "/vehicle-marketplace/new" },
+      { allowedRoles: ["COMPANY_ADMIN", "JOB_SEEKER"], description: "Manage owned vehicle listings", icon: FileText, label: "My listings", to: "/vehicle-marketplace/mine" },
+      { allowedRoles: ["COMPANY_ADMIN", "JOB_SEEKER"], description: "Sent and received buyer inquiries", icon: Bell, label: "Inquiries", to: "/vehicle-marketplace/inquiries" },
+    ],
+    label: "Vehicle market",
+    quickAction: { allowedRoles: ["COMPANY_ADMIN", "JOB_SEEKER"], description: "Create vehicle marketplace listing", icon: Plus, label: "Create listing", to: "/vehicle-marketplace/new" },
+    shortLabel: "Market",
   },
   {
     defaultTo: "/fleet",
@@ -161,6 +182,7 @@ const navSections: NavSection[] = [
       { description: "Workspace profile and identity", icon: Building2, label: "Company", to: "/company" },
       { adminOnly: true, description: "Members and company roles", icon: Users, label: "Team", to: "/team" },
       { description: "Plans and subscription state", icon: CreditCard, label: "Billing", to: "/billing" },
+      { description: "Marketplace credit wallet", icon: WalletCards, label: "Credits", to: "/company-credits" },
       { adminOnly: true, description: "Admin-only platform event log", icon: ScrollText, label: "Audit logs", to: "/audit-logs" },
       { adminOnly: true, description: "Release gates and provider status", icon: ShieldCheck, label: "Release readiness", to: "/release-readiness" },
     ],
@@ -175,7 +197,9 @@ const navSections: NavSection[] = [
     items: [
       { description: "Unread and recent system messages", icon: Bell, label: "Notifications", to: "/notifications" },
       { allowedRoles: ["JOB_SEEKER"], description: "Credits and usage quota", icon: WalletCards, label: "Job wallet", to: "/job-wallet" },
+      { allowedRoles: ["JOB_SEEKER"], description: "Independent profile and marketplace readiness", icon: UserRound, label: "Job profile", to: "/job-profile" },
       { allowedRoles: ["COMPANY_ADMIN", "COMPANY_DRIVER"], description: "Billing and plan workspace", icon: CreditCard, label: "Billing", to: "/billing" },
+      { allowedRoles: ["COMPANY_ADMIN", "COMPANY_DRIVER"], description: "Marketplace credits", icon: WalletCards, label: "Credits", to: "/company-credits" },
       { allowedRoles: ["COMPANY_ADMIN", "COMPANY_DRIVER"], description: "Company settings", icon: Building2, label: "Company settings", to: "/company" },
     ],
     label: "More",
@@ -298,7 +322,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <aside className="fixed bottom-3 left-2 top-2 z-30 hidden w-[55px] rounded-[10px] bg-gradient-to-b from-[#6750e8] via-[#4e34b8] to-[#2d236f] text-white shadow-[0_12px_28px_rgba(35,30,80,0.28),inset_-1px_0_rgba(255,255,255,0.12)] lg:flex lg:flex-col">
+      <aside className="fixed bottom-3 left-2 top-2 z-30 hidden w-[55px] rounded-[10px] bg-gradient-to-b from-[#6750e8] via-[#4e34b8] to-[#2d236a] text-white shadow-[0_12px_28px_rgba(35,30,80,0.28),inset_-1px_0_rgba(255,255,255,0.12)] lg:flex lg:flex-col">
         <div className="px-2 pb-2 pt-3">
           <button
             aria-label={secondaryPanelOpen ? "Unpin sidebar" : "Pin sidebar"}
@@ -312,7 +336,8 @@ export function AppShell() {
           >
             <ChevronsRight className={cn("size-5 transition-transform duration-200", secondaryPanelOpen && "rotate-180")} aria-hidden="true" />
           </button>
-          <div className="mx-auto mt-2 h-px w-7 bg-white/25" />
+          <div className="mx-auto mt-2 h-px w-5 bg-white/25" />
+
         </div>
         <nav className="flex flex-1 flex-col items-center gap-1 overflow-y-auto px-0.5 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {visibleSections.map((section) => {
@@ -325,7 +350,7 @@ export function AppShell() {
                 className={cn(
                   "group relative flex w-11 flex-col items-center gap-0 rounded-lg px-1  py-1.5 text-[10px] font-bold leading-[1.05] text-white/86 outline-none transition hover:bg-white/12 hover:text-white",
                   "focus-visible:ring-2 focus-visible:ring-white/50",
-                  selected && "bg-white/16 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] hover:bg-white/16 hover:text-white",
+                  selected && " text-white hover:bg-white/16 hover:text-white",
                 )}
                 key={section.id}
                 onBlur={schedulePreviewClose}
@@ -349,27 +374,11 @@ export function AppShell() {
             );
           })}
         </nav>
-        <div className="border-t border-white/10 p-1.5">
-          <button
-            className="group relative flex w-full flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[9px] font-bold leading-[1.05] text-white/86 outline-none transition hover:bg-white/12 hover:text-white focus-visible:ring-2 focus-visible:ring-white/50"
-            disabled={logoutMutation.isPending}
-            onClick={() => logoutMutation.mutate()}
-            type="button"
-          >
-            <span className="grid size-6 place-items-center rounded-lg">
-              <LogOut className="size-[15px]" aria-hidden="true" />
-            </span>
-            <span className="w-full truncate text-center">Exit</span>
-            <span className="pointer-events-none absolute left-[66px] top-1/2 z-50 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-[#1d1d1f] px-2.5 py-1.5 text-xs font-semibold text-white shadow-lg group-hover:block group-focus-visible:block">
-              Log out
-            </span>
-          </button>
-        </div>
       </aside>
 
       {displayedSection ? (
         <aside
-          className="fixed bottom-3 left-[84px] top-3 z-20 hidden w-80 rounded-xl border border-black/10 bg-[#f7f7f8] shadow-[0_14px_34px_rgba(29,29,31,0.16)] transition-all duration-200 lg:block"
+          className="fixed bottom-30 left-[84px] top-3 z-20 hidden w-60 rounded-xl border border-black/10 bg-[#f7f7f8] shadow-[0_14px_34px_rgba(29,29,31,0.16)] transition-all duration-200 lg:block"
           onMouseEnter={cancelHoverClose}
           onMouseLeave={schedulePreviewClose}
         >
@@ -377,10 +386,20 @@ export function AppShell() {
             <div className="border-b border-border p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-lg font-semibold tracking-normal">{displayedSection.label}</p>
-                  <p className="text-xs text-muted">Cargo Agent shortcuts</p>
+                  <h2 className="truncate text-lg font-semibold tracking-normal">{displayedSection.label}</h2>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center">
+                  <button
+                      aria-label="Close sidebar"
+                      className="grid size-8 place-items-center rounded-lg text-muted outline-none transition hover:bg-surface-pearl hover:text-foreground focus-visible:ring-2 focus-visible:ring-slate-300"
+                      onClick={() => {
+                        setHoveredSectionId(null);
+                        closeSecondaryPanel();
+                      }}
+                      type="button"
+                  >
+                    <Search className="size-4" aria-hidden="true" />
+                  </button>
                   <button
                     aria-label="Close sidebar"
                     className="grid size-8 place-items-center rounded-lg text-muted outline-none transition hover:bg-surface-pearl hover:text-foreground focus-visible:ring-2 focus-visible:ring-slate-300"
@@ -392,18 +411,18 @@ export function AppShell() {
                   >
                     <ChevronsLeft className="size-4" aria-hidden="true" />
                   </button>
-                  {quickAction ? (
-                    <NavLink
-                      className="grid size-8 place-items-center rounded-lg border border-border bg-card text-foreground shadow-sm transition hover:bg-surface-pearl focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
-                      to={quickAction.to}
-                      onClick={() => {
-                        setHoveredSectionId(null);
-                        setPanelSearch("");
-                      }}
-                    >
-                      <Plus className="size-4" aria-hidden="true" />
-                    </NavLink>
-                  ) : null}
+                  {/*{quickAction ? (*/}
+                  {/*  <NavLink*/}
+                  {/*    className="grid size-8 place-items-center rounded-lg border border-border bg-card text-foreground shadow-sm transition hover:bg-surface-pearl focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"*/}
+                  {/*    to={quickAction.to}*/}
+                  {/*    onClick={() => {*/}
+                  {/*      setHoveredSectionId(null);*/}
+                  {/*      setPanelSearch("");*/}
+                  {/*    }}*/}
+                  {/*  >*/}
+                  {/*    <Plus className="size-4" aria-hidden="true" />*/}
+                  {/*  </NavLink>*/}
+                  {/*) : null}*/}
                 </div>
               </div>
               <div className="relative mt-4">
@@ -540,7 +559,7 @@ export function AppShell() {
       ) : null}
 
       <div className={cn("transition-[padding] duration-200", leftOffset)}>
-        <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur-xl sm:px-5">
+        <header className="sticky top-0 z-10 flex h-14 items-center justify-between  bg-background/80 px-4 backdrop-blur-xl sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
             <button
               aria-label="Open navigation"
@@ -550,18 +569,6 @@ export function AppShell() {
             >
               <Menu className="size-4" aria-hidden="true" />
             </button>
-            <button
-              aria-label={secondaryPanelOpen ? "Close sidebar" : "Open sidebar"}
-              className="hidden size-9 place-items-center rounded-lg border border-border bg-card text-foreground shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 lg:grid"
-              onClick={toggleSecondaryPanel}
-              type="button"
-            >
-              <Menu className="size-4" aria-hidden="true" />
-            </button>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-muted">{t("app.stage")}</p>
-              <h1 className="truncate text-lg font-semibold tracking-normal">{activeSection.label}</h1>
-            </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden text-right sm:block">
@@ -638,7 +645,7 @@ export function AppShell() {
             </Button>
           </div>
         </header>
-        <main className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-5">
+        <main className="mx-auto w-full max-w-7xl px-4 py-1 sm:px-5">
           <Outlet />
         </main>
       </div>

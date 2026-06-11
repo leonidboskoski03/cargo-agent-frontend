@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { BriefcaseBusiness, Filter } from "lucide-react";
+import { BriefcaseBusiness, Filter, MapPin } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { listContracts, type ContractStatus } from "@/shared/api/modules/contracts";
 import { Button } from "@/shared/components/ui/Button";
@@ -16,6 +16,17 @@ function roleLabel(contract: { carrierCompanyId: string; shipperCompanyId: strin
   if (companyId === contract.shipperCompanyId) return "Shipper";
   if (companyId === contract.carrierCompanyId) return "Carrier";
   return "Participant";
+}
+
+function routeLabel(contract: Awaited<ReturnType<typeof listContracts>>[number]) {
+  if (!contract.route) return `Route ${contract.routeId.slice(0, 8)}`;
+  return `${contract.route.originLocation.city}, ${contract.route.originLocation.countryCode} -> ${contract.route.destinationLocation.city}, ${contract.route.destinationLocation.countryCode}`;
+}
+
+function counterpartyLabel(contract: Awaited<ReturnType<typeof listContracts>>[number], companyId?: string | null) {
+  if (companyId === contract.shipperCompanyId) return contract.carrierCompany?.name ?? "Carrier company";
+  if (companyId === contract.carrierCompanyId) return contract.shipperCompany?.name ?? "Shipper company";
+  return contract.shipperCompany?.name ?? contract.carrierCompany?.name ?? "Company";
 }
 
 export function ContractsPage() {
@@ -104,8 +115,10 @@ export function ContractsPage() {
           <thead>
             <tr>
               <Th>Contract</Th>
+              <Th>Route</Th>
               <Th>Status</Th>
               <Th>Role</Th>
+              <Th>Counterparty</Th>
               <Th>Agreed Price</Th>
               <Th>Pickup</Th>
               <Th>Delivery</Th>
@@ -116,12 +129,19 @@ export function ContractsPage() {
               <tr key={contract.id}>
                 <Td>
                   <Link className="font-semibold text-primary" to={`/contracts/${contract.id}`}>
-                    {contract.id.slice(0, 8)}
+                    {contract.post?.title ?? `Contract ${contract.id.slice(0, 8)}`}
                   </Link>
-                  <p className="mt-1 break-words text-xs text-muted">Post {contract.postId.slice(0, 8)}</p>
+                  <p className="mt-1 break-words text-xs text-muted">{contract.post?.cargoDescription ?? `Post ${contract.postId.slice(0, 8)}`}</p>
+                </Td>
+                <Td>
+                  <div className="flex items-start gap-2">
+                    <MapPin aria-hidden="true" className="mt-0.5 size-4 text-muted" />
+                    <span>{routeLabel(contract)}</span>
+                  </div>
                 </Td>
                 <Td><StatusBadge tone={contractTone(contract.status)}>{humanizeEnum(contract.status)}</StatusBadge></Td>
                 <Td>{roleLabel(contract, user?.companyId)}</Td>
+                <Td>{counterpartyLabel(contract, user?.companyId)}</Td>
                 <Td>{formatCurrency(contract.agreedPriceAmount, contract.currency)}</Td>
                 <Td>{formatDateTime(contract.pickupPlannedAt)}</Td>
                 <Td>{formatDateTime(contract.deliveryPlannedAt)}</Td>

@@ -18,9 +18,5 @@ export function ProtectedRoute() {
     return <Navigate replace state={{ from: location }} to="/login" />;
   }
 
-  if (user.role === "JOB_SEEKER") {
-    return <Navigate replace to="/login" />;
-  }
-
   return <Outlet />;
 }
