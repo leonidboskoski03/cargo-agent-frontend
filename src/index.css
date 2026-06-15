@@ -32,7 +32,7 @@ html {
   color: #1d1d1f;
   font-family: var(--font-sans);
   font-size: 17px;
-  letter-spacing: -0.374px;
+  letter-spacing: 0;
   line-height: 1.47;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;

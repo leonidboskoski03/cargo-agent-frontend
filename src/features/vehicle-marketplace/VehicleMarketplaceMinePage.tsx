@@ -13,6 +13,7 @@ import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge } from "@/shared/components/ui/DataTable";
 import { Select } from "@/shared/components/ui/Form";
 import { EmptyState, ErrorState, LoadingState, PageHeader } from "@/shared/components/ui/Page";
+import { Tooltip } from "@/shared/components/ui/Tooltip";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { humanizeEnum } from "@/shared/lib/formatters";
 import { formatListingLocation, formatListingPrice, formatVehicleSpec, marketplaceStatusTone } from "./vehicleMarketplaceFormatters";
@@ -80,20 +81,26 @@ function OwnerListingCard({ changeStatus, deletePending, listing, onDelete, onRe
             {ownerStatuses.map((status) => <option key={status} value={status}>{humanizeEnum(status)}</option>)}
           </Select>
           {listing.deletedAt ? (
-            <Button className="h-9 min-h-9 px-3" disabled={restorePending} onClick={() => window.confirm("Restore this listing to owner management?") && onRestore(listing.id)} type="button" variant="secondary">
-              <RotateCcw className="size-4" aria-hidden="true" />
-              Restore
-            </Button>
+            <Tooltip label="Restore listing">
+              <Button className="h-9 min-h-9 px-3" disabled={restorePending} onClick={() => window.confirm("Restore this listing to owner management?") && onRestore(listing.id)} type="button" variant="secondary">
+                <RotateCcw className="size-4" aria-hidden="true" />
+                Restore
+              </Button>
+            </Tooltip>
           ) : (
             <>
-              <Link className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-primary bg-card px-3 py-1.5 text-sm text-primary" to={`/vehicle-marketplace/${listing.id}/edit`}>
-                <Pencil className="size-4" aria-hidden="true" />
-                Edit
-              </Link>
-              <Button className="h-9 min-h-9 px-3" disabled={deletePending} onClick={() => window.confirm("Delete this listing? It will be hidden from public browse.") && onDelete(listing.id)} type="button" variant="danger">
-                <Trash2 className="size-4" aria-hidden="true" />
-                Delete
-              </Button>
+              <Tooltip label="Edit listing">
+                <Link className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-primary bg-card px-3 py-1.5 text-sm text-primary transition hover:bg-surface-pearl focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-background" to={`/vehicle-marketplace/${listing.id}/edit`}>
+                  <Pencil className="size-4" aria-hidden="true" />
+                  Edit
+                </Link>
+              </Tooltip>
+              <Tooltip label="Delete listing">
+                <Button className="h-9 min-h-9 px-3" disabled={deletePending} onClick={() => window.confirm("Delete this listing? It will be hidden from public browse.") && onDelete(listing.id)} type="button" variant="danger">
+                  <Trash2 className="size-4" aria-hidden="true" />
+                  Delete
+                </Button>
+              </Tooltip>
             </>
           )}
         </div>
@@ -105,6 +112,7 @@ function OwnerListingCard({ changeStatus, deletePending, listing, onDelete, onRe
 export function VehicleMarketplaceMinePage() {
   const queryClient = useQueryClient();
   const [billingResult, setBillingResult] = useState<MarketplaceBillingMetadata | null>(null);
+  const [registryView, setRegistryView] = useState<"active" | "deleted">("active");
   const query = useQuery({
     queryFn: () => listMyVehicleMarketplaceListings({ includeDeleted: true }),
     queryKey: ["vehicle-marketplace", "mine", "include-deleted"],
@@ -152,23 +160,57 @@ export function VehicleMarketplaceMinePage() {
   if (query.error) return <ErrorState description="Your vehicle marketplace listings could not be loaded." error={query.error} title="Unable to load my listings" />;
 
   const listings = query.data ?? [];
+  const activeListings = listings.filter((listing) => !listing.deletedAt);
+  const deletedListings = listings.filter((listing) => listing.deletedAt);
+  const visibleListings = registryView === "deleted" ? deletedListings : activeListings;
+  const isDeletedView = registryView === "deleted";
 
   return (
     <div className="space-y-6">
       <PageHeader
         action={<Link className="inline-flex min-h-10 items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground" to="/vehicle-marketplace/new">Create listing</Link>}
         eyebrow="Vehicle marketplace"
-        subtitle="Manage your draft, published, paused, sold, rented, and closed listings."
+        subtitle="Manage active inventory and restore deleted vehicle listings from a dedicated view."
         title="My vehicle listings"
       />
       {billingCopy ? (
         <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-foreground">{billingCopy}</div>
       ) : null}
-      {listings.length === 0 ? (
-        <EmptyState action={<Link className="text-sm font-semibold text-primary" to="/vehicle-marketplace/new">Create your first listing</Link>} description="Your company or job-seeker vehicle listings will appear here." title="No owned listings" />
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-foreground">Listing registry</p>
+          <p className="mt-1 text-sm text-muted">{isDeletedView ? "Deleted listings remain private until restored." : "Active listings include draft, published, paused, sold, rented, and closed records."}</p>
+        </div>
+        <div className="inline-flex w-fit rounded-lg border border-border bg-surface-pearl p-1" aria-label="Vehicle listing registry view">
+          <Button
+            aria-pressed={!isDeletedView}
+            className="min-h-8 px-3 py-1 text-sm"
+            onClick={() => setRegistryView("active")}
+            type="button"
+            variant={!isDeletedView ? "secondary" : "ghost"}
+          >
+            Active <span className="text-xs text-muted">{activeListings.length}</span>
+          </Button>
+          <Button
+            aria-pressed={isDeletedView}
+            className="min-h-8 px-3 py-1 text-sm"
+            onClick={() => setRegistryView("deleted")}
+            type="button"
+            variant={isDeletedView ? "secondary" : "ghost"}
+          >
+            Deleted <span className="text-xs text-muted">{deletedListings.length}</span>
+          </Button>
+        </div>
+      </div>
+      {visibleListings.length === 0 ? (
+        <EmptyState
+          action={!isDeletedView ? <Link className="text-sm font-semibold text-primary" to="/vehicle-marketplace/new">Create your first listing</Link> : null}
+          description={isDeletedView ? "Deleted vehicle marketplace listings will appear here after removal." : "Your company or job-seeker vehicle listings will appear here."}
+          title={isDeletedView ? "No deleted listings" : "No active listings"}
+        />
       ) : (
         <div className="grid gap-4">
-          {listings.map((listing) => (
+          {visibleListings.map((listing) => (
             <OwnerListingCard
               changeStatus={changeStatus}
               deletePending={deleteMutation.isPending}

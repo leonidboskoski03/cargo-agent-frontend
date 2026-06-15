@@ -33,6 +33,7 @@ export type UserSelfUpdateInput = Partial<{
   isActive: boolean;
   lastName: string;
   phone: string | null;
+  preferredLanguage: string | null;
   preferredRoutes: string[] | null;
   yearsExperience: number | null;
 }>;
@@ -46,7 +47,7 @@ export function getMe() {
   return unwrapData<UserProfile>(apiClient.get("/users/me"));
 }
 
-export function listUsers(params?: { includeInactive?: boolean }) {
+export function listUsers(params?: { deleted?: "active" | "only" | "include"; includeInactive?: boolean }) {
   return unwrapData<UserProfile[]>(apiClient.get("/users", { params }));
 }
 

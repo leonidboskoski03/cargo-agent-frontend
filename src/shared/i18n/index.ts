@@ -12,11 +12,17 @@ import sr from "./locales/sr.json";
 import tr from "./locales/tr.json";
 
 export const supportedLanguages = ["en", "mk", "sr", "tr", "sq", "bg", "hr", "ro", "bs"] as const;
+export const languageStorageKey = "cargo-agent-language";
 
 void i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
+    detection: {
+      caches: ["localStorage"],
+      lookupLocalStorage: languageStorageKey,
+      order: ["localStorage", "navigator"],
+    },
     fallbackLng: "en",
     interpolation: {
       escapeValue: false,

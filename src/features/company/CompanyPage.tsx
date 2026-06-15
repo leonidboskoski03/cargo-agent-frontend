@@ -1,13 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, Trash2 } from "lucide-react";
+import { Building2, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
-import { deleteMyCompany, getMyCompany, restoreCompany, updateMyCompany } from "@/shared/api/modules/companies";
+import { deleteMyCompany, getMyCompany, requestMyCompanyVerification, restoreCompany, updateMyCompany } from "@/shared/api/modules/companies";
 import { uploadDocument } from "@/shared/api/modules/documents";
 import { listSupportedCountries } from "@/shared/api/modules/geo";
 import { getMyProfileCompletion } from "@/shared/api/modules/users";
 import { Button } from "@/shared/components/ui/Button";
+import { StatusBadge } from "@/shared/components/ui/DataTable";
 import { FileUploadControl } from "@/shared/components/ui/FileUploadControl";
 import { Field, Input, Select, Textarea } from "@/shared/components/ui/Form";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
@@ -34,14 +35,22 @@ function completionCopy(nextBestAction?: string | null) {
   return nextBestAction ? labels[nextBestAction] ?? "Complete the next missing profile field." : "Company and profile basics are complete.";
 }
 
+function verificationTone(status: string): "danger" | "neutral" | "success" | "warning" {
+  if (status === "VERIFIED") return "success";
+  if (status === "FAILED") return "danger";
+  if (status === "PENDING" || status === "NEEDS_REVIEW") return "warning";
+  return "neutral";
+}
+
 export function CompanyPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const isAdmin = canManageCompany(user?.role);
   const companyQuery = useQuery({ queryFn: () => getMyCompany(), queryKey: ["companies", "me"] });
-  const completionQuery = useQuery({ queryFn: () => getMyProfileCompletion(), queryKey: ["users", "me", "profile-completion"] });
-  const countriesQuery = useQuery({ queryFn: listSupportedCountries, queryKey: ["geo", "countries"], staleTime: 1000 * 60 * 30 });
   const company = companyQuery.data;
+  const isDeletedCompany = Boolean(company?.deletedAt);
+  const completionQuery = useQuery({ enabled: !isDeletedCompany, queryFn: () => getMyProfileCompletion(), queryKey: ["users", "me", "profile-completion"] });
+  const countriesQuery = useQuery({ queryFn: listSupportedCountries, queryKey: ["geo", "countries"], staleTime: 1000 * 60 * 30 });
 
   const form = useForm<CompanyFormInput, unknown, CompanyFormValues>({
     resolver: zodResolver(companySchema),
@@ -124,6 +133,11 @@ export function CompanyPage() {
       });
     },
   });
+  const verificationMutation = useAppMutation({
+    messages: { success: "Verification requested" },
+    mutationFn: requestMyCompanyVerification,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["companies", "me"] }),
+  });
 
   if (companyQuery.isLoading) {
     return <LoadingState description="Loading your company profile and completion score." title="Loading company" />;
@@ -161,12 +175,43 @@ export function CompanyPage() {
             </div>
             <dl className="mt-5 space-y-4">
               <div>
+                <dt className="text-xs font-semibold uppercase text-muted">Status</dt>
+                <dd className="mt-1"><StatusBadge tone={isDeletedCompany ? "danger" : "success"}>{isDeletedCompany ? "DELETED" : "ACTIVE"}</StatusBadge></dd>
+              </div>
+              <div>
                 <dt className="text-xs font-semibold uppercase text-muted">Type</dt>
                 <dd className="mt-1 text-sm">{company.companyType}</dd>
               </div>
               <div>
                 <dt className="text-xs font-semibold uppercase text-muted">Registration</dt>
                 <dd className="mt-1 break-words text-sm">{company.registrationNumber}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase text-muted">Verification</dt>
+                <dd className="mt-1 space-y-2">
+                  <StatusBadge tone={verificationTone(company.verificationStatus)}>{company.verificationStatus.replace("_", " ")}</StatusBadge>
+                  {company.verificationProvider ? (
+                    <p className="text-xs leading-5 text-muted">
+                      {company.verificationProvider}
+                      {company.verificationCheckedAt ? ` · ${new Date(company.verificationCheckedAt).toLocaleDateString()}` : ""}
+                    </p>
+                  ) : null}
+                  {company.verificationFailureReason ? (
+                    <p className="text-xs leading-5 text-muted">{company.verificationFailureReason}</p>
+                  ) : null}
+                  {isAdmin ? (
+                    <Button
+                      className="min-h-8 px-3 py-1.5 text-xs"
+                      disabled={verificationMutation.isPending || company.verificationStatus === "PENDING"}
+                      onClick={() => verificationMutation.mutate()}
+                      type="button"
+                      variant="secondary"
+                    >
+                      <ShieldCheck aria-hidden="true" className="size-4" />
+                      Run verification
+                    </Button>
+                  ) : null}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs font-semibold uppercase text-muted">Subscription</dt>
@@ -183,7 +228,20 @@ export function CompanyPage() {
         </div>
 
         <Surface>
-          {isAdmin ? (
+          {isDeletedCompany ? (
+            <div className="space-y-4">
+              <EmptyState
+                description="This company workspace is currently deleted. Restore it before editing profile details or managing operational records."
+                title="Company deleted"
+              />
+              {isAdmin ? (
+                <Button disabled={restoreMutation.isPending} onClick={() => restoreMutation.mutate(company.id)} type="button" variant="secondary">
+                  <RotateCcw aria-hidden="true" className="size-4" />
+                  Restore Company
+                </Button>
+              ) : null}
+            </div>
+          ) : isAdmin ? (
             <form className="grid gap-4 md:grid-cols-2" onSubmit={form.handleSubmit((values) => updateMutation.mutate(values))}>
               <div className="md:col-span-2">
                 <h2 className="text-2xl font-semibold tracking-[-0.28px]">Edit company profile</h2>

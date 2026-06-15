@@ -8,6 +8,7 @@ const BidsPage = lazy(() => import("@/features/bids/BidsPage").then((module) => 
 const CompanyCreditsCheckoutPage = lazy(() => import("@/features/billing/CompanyCreditsCheckoutPage").then((module) => ({ default: module.CompanyCreditsCheckoutPage })));
 const CompanyCreditsPage = lazy(() => import("@/features/billing/CompanyCreditsPage").then((module) => ({ default: module.CompanyCreditsPage })));
 const AuditLogsPage = lazy(() => import("@/features/support/AuditLogsPage").then((module) => ({ default: module.AuditLogsPage })));
+const ChangePasswordPage = lazy(() => import("@/features/auth/ChangePasswordPage").then((module) => ({ default: module.ChangePasswordPage })));
 const CompanyPage = lazy(() => import("@/features/company/CompanyPage").then((module) => ({ default: module.CompanyPage })));
 const ContractDetailPage = lazy(() => import("@/features/contracts/ContractDetailPage").then((module) => ({ default: module.ContractDetailPage })));
 const ContractsPage = lazy(() => import("@/features/contracts/ContractsPage").then((module) => ({ default: module.ContractsPage })));
@@ -20,6 +21,7 @@ const FleetVehiclesPage = lazy(() => import("@/features/fleet/FleetVehiclesPage"
 const ForgotPasswordPage = lazy(() => import("@/features/auth/ForgotPasswordPage").then((module) => ({ default: module.ForgotPasswordPage })));
 const InviteAcceptPage = lazy(() => import("@/features/invites/InviteAcceptPage").then((module) => ({ default: module.InviteAcceptPage })));
 const JobDetailPage = lazy(() => import("@/features/jobs/JobDetailPage").then((module) => ({ default: module.JobDetailPage })));
+const JobApplicationsPage = lazy(() => import("@/features/jobs/JobApplicationsPage").then((module) => ({ default: module.JobApplicationsPage })));
 const JobsPage = lazy(() => import("@/features/jobs/JobsPage").then((module) => ({ default: module.JobsPage })));
 const JobProfilePage = lazy(() => import("@/features/jobs/JobProfilePage").then((module) => ({ default: module.JobProfilePage })));
 const JobWalletCheckoutPage = lazy(() => import("@/features/jobs/JobWalletCheckoutPage").then((module) => ({ default: module.JobWalletCheckoutPage })));
@@ -28,6 +30,7 @@ const LoginPage = lazy(() => import("@/features/auth/LoginPage").then((module) =
 const LocationsPage = lazy(() => import("@/features/locations-routes/LocationsPage").then((module) => ({ default: module.LocationsPage })));
 const NewJobPage = lazy(() => import("@/features/jobs/NewJobPage").then((module) => ({ default: module.NewJobPage })));
 const NotificationsPage = lazy(() => import("@/features/support/NotificationsPage").then((module) => ({ default: module.NotificationsPage })));
+const OnboardingPage = lazy(() => import("@/features/onboarding/OnboardingPage").then((module) => ({ default: module.OnboardingPage })));
 const PostDetailPage = lazy(() => import("@/features/posts/PostDetailPage").then((module) => ({ default: module.PostDetailPage })));
 const PostsPage = lazy(() => import("@/features/posts/PostsPage").then((module) => ({ default: module.PostsPage })));
 const RegistrationStartPage = lazy(() => import("@/features/registration/RegistrationStartPage").then((module) => ({ default: module.RegistrationStartPage })));
@@ -74,16 +77,22 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/dashboard" replace /> },
           { path: "dashboard", element: withSuspense(<DashboardPage />) },
+          { path: "account/password", element: withSuspense(<ChangePasswordPage />) },
+          { path: "onboarding", element: withSuspense(<OnboardingPage />) },
           { path: "locations", element: withSuspense(<LocationsPage />) },
           { path: "routes", element: withSuspense(<RoutesPage />) },
-          { path: "posts", element: withSuspense(<PostsPage mode="planned" />) },
-          { path: "posts/quick", element: withSuspense(<PostsPage mode="quick" />) },
-          { path: "posts/planned", element: withSuspense(<PostsPage mode="planned" />) },
+          { path: "posts", element: <Navigate to="/posts/quick" replace /> },
+          { path: "posts/marketplace", element: withSuspense(<PostsPage fixedScope="marketplace" mode="planned" />) },
+          { path: "posts/mine", element: withSuspense(<PostsPage fixedScope="mine" mode="planned" />) },
+          { path: "posts/quick", element: withSuspense(<PostsPage creationOnly fixedScope="mine" mode="quick" />) },
+          { path: "posts/planned", element: withSuspense(<PostsPage creationOnly fixedScope="mine" mode="planned" />) },
+          { path: "posts/:postId/edit", element: withSuspense(<PostDetailPage />) },
           { path: "posts/:postId", element: withSuspense(<PostDetailPage />) },
           { path: "bids", element: withSuspense(<BidsPage />) },
           { path: "contracts", element: withSuspense(<ContractsPage />) },
           { path: "contracts/:contractId", element: withSuspense(<ContractDetailPage />) },
           { path: "jobs", element: withSuspense(<JobsPage />) },
+          { path: "jobs/applications", element: withSuspense(<JobApplicationsPage />) },
           { path: "jobs/mine", element: withSuspense(<JobsPage scope="mine" />) },
           { path: "jobs/new", element: withSuspense(<NewJobPage />) },
           { path: "jobs/:jobApplicationId", element: withSuspense(<JobDetailPage />) },

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "@/features/auth/authStore";
@@ -50,6 +51,20 @@ describe("VehicleMarketplaceMinePage", () => {
         city: "Skopje",
         countryCode: "MK",
         createdAt: "",
+        deletedAt: null,
+        id: "listing_active",
+        intent: "RENTAL",
+        ownerCompanyId: "company_1",
+        sourceType: "STANDALONE",
+        status: "PUBLISHED",
+        title: "Active truck listing",
+        updatedAt: "",
+        vehicleType: "TRUCK",
+      },
+      {
+        city: "Skopje",
+        countryCode: "MK",
+        createdAt: "",
         deletedAt: "2026-06-07T12:00:00.000Z",
         id: "listing_deleted",
         intent: "SALE",
@@ -61,14 +76,24 @@ describe("VehicleMarketplaceMinePage", () => {
         vehicleType: "TRAILER",
       },
     ]);
+    vehicleMarketplaceApi.restoreVehicleMarketplaceListing.mockResolvedValue({});
+    vi.spyOn(window, "confirm").mockReturnValue(true);
   });
 
-  it("loads owned deleted listings and shows restore action", async () => {
+  it("splits active and deleted owned listings into dedicated views", async () => {
     renderPage();
 
-    expect(await screen.findByText("Deleted trailer listing")).toBeInTheDocument();
+    expect(await screen.findByText("Active truck listing")).toBeInTheDocument();
+    expect(screen.queryByText("Deleted trailer listing")).not.toBeInTheDocument();
     expect(vehicleMarketplaceApi.listMyVehicleMarketplaceListings).toHaveBeenCalledWith({ includeDeleted: true });
-    expect(screen.getByText("Deleted")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /restore/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /active 1/i })).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(screen.getByRole("button", { name: /deleted 1/i }));
+
+    expect(await screen.findByText("Deleted trailer listing")).toBeInTheDocument();
+    expect(screen.queryByText("Active truck listing")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /restore/i }));
+
+    expect(vehicleMarketplaceApi.restoreVehicleMarketplaceListing).toHaveBeenCalledWith("listing_deleted", expect.anything());
   });
 });

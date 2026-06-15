@@ -17,8 +17,14 @@ export const jobApplicationSchema = z.object({
 }));
 
 export const jobApplySchema = z.object({
+  documentName: z.string().trim().max(120, "Document name is too long.").optional(),
+  documentUrl: z.string().trim().url("Upload a valid document.").optional().or(z.literal("")),
   message: z.string().trim().max(2000, "Message is too long.").optional(),
-});
+}).transform((values) => ({
+  documentName: values.documentName || undefined,
+  documentUrl: values.documentUrl || undefined,
+  message: values.message || undefined,
+}));
 
 export type JobApplicationFormInput = z.input<typeof jobApplicationSchema>;
 export type JobApplicationFormValues = z.output<typeof jobApplicationSchema>;

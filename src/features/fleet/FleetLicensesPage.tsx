@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { IdCard, RotateCcw, Save, Trash2 } from "lucide-react";
+import { IdCard, Pencil, RotateCcw, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { uploadDocument } from "@/shared/api/modules/documents";
@@ -11,6 +11,7 @@ import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
 import { FileUploadControl } from "@/shared/components/ui/FileUploadControl";
 import { Checkbox, Field, Input, Select } from "@/shared/components/ui/Form";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
+import { Tooltip } from "@/shared/components/ui/Tooltip";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { fileToBase64 } from "@/shared/lib/files";
 import { useAuthStore } from "@/features/auth/authStore";
@@ -44,16 +45,26 @@ export function FleetLicensesPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const canManage = canManageFleet(user?.role);
+  const canAttachOwnLicense = user?.role === "COMPANY_DRIVER";
   const [filterUserId, setFilterUserId] = useState("");
   const [editing, setEditing] = useState<LicenseRecord | null>(null);
   const [deleted, setDeleted] = useState<LicenseRecord | null>(null);
-  const usersQuery = useQuery({ queryFn: () => listUsers({ includeInactive: false }), queryKey: ["users", "active"] });
+  const [registryView, setRegistryView] = useState<"active" | "deleted">("active");
+  const usersQuery = useQuery({ enabled: canManage, queryFn: () => listUsers({ includeInactive: false }), queryKey: ["users", "active"] });
   const licenseTypesQuery = useQuery({ queryFn: listLicenseTypes, queryKey: ["licenses", "types"], staleTime: 1000 * 60 * 30 });
   const licensesQuery = useQuery({
-    queryFn: () => listLicenses(filterUserId ? { userId: filterUserId } : undefined),
-    queryKey: ["licenses", filterUserId || "ALL"],
+    queryFn: () => listLicenses({
+      deleted: registryView === "deleted" ? "only" : "active",
+      ...(filterUserId ? { userId: filterUserId } : {}),
+    }),
+    queryKey: ["licenses", filterUserId || "ALL", registryView],
   });
-  const companyUsers = useMemo(() => (usersQuery.data ?? []).filter((item) => item.role === "COMPANY_ADMIN" || item.role === "COMPANY_DRIVER"), [usersQuery.data]);
+  const companyUsers = useMemo(
+    () => canManage
+      ? (usersQuery.data ?? []).filter((item) => item.role === "COMPANY_ADMIN" || item.role === "COMPANY_DRIVER")
+      : user ? [user] : [],
+    [canManage, user, usersQuery.data],
+  );
   const form = useForm<LicenseFormInput, unknown, LicenseFormValues>({
     resolver: zodResolver(licenseSchema),
     defaultValues: licenseDefaults,
@@ -62,11 +73,11 @@ export function FleetLicensesPage() {
   const imageUrl = String(useWatch({ control: form.control, name: "imageUrl" }) ?? "");
 
   useEffect(() => {
-    form.reset(editing ? toLicenseForm(editing) : { ...licenseDefaults, userId: canManage ? companyUsers[0]?.id ?? "" : "" });
-  }, [canManage, companyUsers, editing, form]);
+    form.reset(editing ? toLicenseForm(editing) : { ...licenseDefaults, userId: canManage ? companyUsers[0]?.id ?? "" : user?.id ?? "" });
+  }, [canManage, companyUsers, editing, form, user?.id]);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["licenses"] });
-  const createMutation = useAppMutation({ messages: { success: "License created" }, mutationFn: createLicense, onSuccess: () => { form.reset({ ...licenseDefaults, userId: canManage ? companyUsers[0]?.id ?? "" : "" }); void refresh(); } });
+  const createMutation = useAppMutation({ messages: { success: "License created" }, mutationFn: createLicense, onSuccess: () => { form.reset({ ...licenseDefaults, userId: canManage ? companyUsers[0]?.id ?? "" : user?.id ?? "" }); void refresh(); } });
   const updateMutation = useAppMutation({ messages: { success: "License updated" }, mutationFn: (values: LicenseFormValues) => updateLicense(editing?.id ?? "", values), onSuccess: () => { setEditing(null); void refresh(); } });
   const deleteMutation = useAppMutation({ messages: { success: "License deleted" }, mutationFn: deleteLicense, onSuccess: (record) => { setDeleted(record); void refresh(); } });
   const restoreMutation = useAppMutation({ messages: { success: "License restored" }, mutationFn: restoreLicense, onSuccess: () => { setDeleted(null); void refresh(); } });
@@ -99,10 +110,11 @@ export function FleetLicensesPage() {
     },
   });
 
-  if (licensesQuery.isLoading || usersQuery.isLoading || licenseTypesQuery.isLoading) return <LoadingState description="Loading licenses and user filters." title="Loading licenses" />;
+  if (licensesQuery.isLoading || (canManage && usersQuery.isLoading) || licenseTypesQuery.isLoading) return <LoadingState description="Loading licenses and user filters." title="Loading licenses" />;
   if (licensesQuery.error || usersQuery.error || licenseTypesQuery.error) return <ErrorState description="License data could not be loaded." error={licensesQuery.error ?? usersQuery.error ?? licenseTypesQuery.error} title="Unable to load licenses" />;
 
   const licenses = licensesQuery.data ?? [];
+  const isDeletedView = registryView === "deleted";
 
   return (
     <div className="space-y-6">
@@ -119,19 +131,23 @@ export function FleetLicensesPage() {
       ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[0.36fr_0.64fr]">
-        {canManage ? (
+        {canManage || canAttachOwnLicense ? (
           <Surface>
             <form className="space-y-4" onSubmit={form.handleSubmit((values) => editing ? updateMutation.mutate(values) : createMutation.mutate(values))}>
               <div>
-                <h2 className="text-2xl font-semibold tracking-[-0.28px]">{editing ? "Edit license" : "Add license"}</h2>
-                <p className="mt-1 text-sm leading-6 text-muted">Attach credentials to company users and validate the date window.</p>
+                <h2 className="text-2xl font-semibold tracking-[-0.28px]">{editing ? "Edit license" : canManage ? "Add license" : "Attach my license"}</h2>
+                <p className="mt-1 text-sm leading-6 text-muted">
+                  {canManage ? "Attach credentials to company users and validate the date window." : "Upload your driver license so company admins can review it."}
+                </p>
               </div>
-              <Field error={form.formState.errors.userId?.message} label="User" required>
-                <Select {...form.register("userId")} disabled={Boolean(editing)}>
-                  <option value="">Select user</option>
-                  {companyUsers.map((item) => <option key={item.id} value={item.id}>{formatUser(item)}</option>)}
-                </Select>
-              </Field>
+              {canManage ? (
+                <Field error={form.formState.errors.userId?.message} label="User" required>
+                  <Select {...form.register("userId")} disabled={Boolean(editing)}>
+                    <option value="">Select user</option>
+                    {companyUsers.map((item) => <option key={item.id} value={item.id}>{formatUser(item)}</option>)}
+                  </Select>
+                </Field>
+              ) : <input type="hidden" {...form.register("userId")} />}
               <Field error={form.formState.errors.licenseType?.message} label="License type" required>
                 <Select {...form.register("licenseType")}>
                   <option value="">Select license type</option>
@@ -182,7 +198,7 @@ export function FleetLicensesPage() {
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button disabled={createMutation.isPending || updateMutation.isPending} type="submit">
                   <Save aria-hidden="true" className="size-4" />
-                  {editing ? "Save license" : "Add license"}
+                  {editing ? "Save license" : canManage ? "Add license" : "Attach license"}
                 </Button>
                 {editing ? <Button onClick={() => setEditing(null)} type="button" variant="secondary">Cancel</Button> : null}
               </div>
@@ -200,22 +216,49 @@ export function FleetLicensesPage() {
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-2xl font-semibold tracking-[-0.28px]">License registry</h2>
-              <p className="mt-1 text-sm leading-6 text-muted">Filter by company user when reviewing a specific driver.</p>
+              <p className="mt-1 text-sm leading-6 text-muted">
+                {isDeletedView ? "Restore deleted license records without mixing them into active compliance work." : "Filter by company user when reviewing a specific driver."}
+              </p>
             </div>
             {canManage ? (
-              <div className="w-full md:w-72">
-                <Field label="User filter">
-                  <Select onChange={(event) => setFilterUserId(event.target.value)} value={filterUserId}>
-                    <option value="">All users</option>
-                    {companyUsers.map((item) => <option key={item.id} value={item.id}>{formatUser(item)}</option>)}
-                  </Select>
-                </Field>
+              <div className="flex w-full flex-col gap-3 md:w-auto md:min-w-72 md:items-end">
+                <div className="inline-flex w-fit rounded-lg border border-border bg-surface-pearl p-1" aria-label="Fleet license registry view">
+                  <Button
+                    aria-pressed={!isDeletedView}
+                    className="min-h-8 px-3 py-1 text-sm"
+                    onClick={() => setRegistryView("active")}
+                    type="button"
+                    variant={!isDeletedView ? "secondary" : "ghost"}
+                  >
+                    Active
+                  </Button>
+                  <Button
+                    aria-pressed={isDeletedView}
+                    className="min-h-8 px-3 py-1 text-sm"
+                    onClick={() => setRegistryView("deleted")}
+                    type="button"
+                    variant={isDeletedView ? "secondary" : "ghost"}
+                  >
+                    Deleted
+                  </Button>
+                </div>
+                <div className="w-full md:w-72">
+                  <Field label="User filter">
+                    <Select onChange={(event) => setFilterUserId(event.target.value)} value={filterUserId}>
+                      <option value="">All users</option>
+                      {companyUsers.map((item) => <option key={item.id} value={item.id}>{formatUser(item)}</option>)}
+                    </Select>
+                  </Field>
+                </div>
               </div>
             ) : null}
           </div>
           <div className="mt-5">
             {licenses.length === 0 ? (
-              <EmptyState description="Licenses will appear after credentials are added." title="No licenses found" />
+              <EmptyState
+                description={isDeletedView ? "Deleted licenses will appear here after admins remove them from the active registry." : "Licenses will appear after credentials are added."}
+                title={isDeletedView ? "No deleted licenses" : "No licenses found"}
+              />
             ) : (
               <Table>
                 <thead><tr><Th>User</Th><Th>License</Th><Th>Dates</Th><Th>Status</Th><Th>Actions</Th></tr></thead>
@@ -230,12 +273,40 @@ export function FleetLicensesPage() {
                           <p className="mt-1 text-xs text-muted">{[license.imageUrl ? "Photo added" : null, license.documentUrl ? "Document added" : null].filter(Boolean).join(" - ") || "No media"}</p>
                         </Td>
                         <Td>{formatDate(license.issuedAt)} to {formatDate(license.expiresAt)}</Td>
-                        <Td><StatusBadge tone={license.isValid ? "success" : "warning"}>{license.isValid ? "VALID" : "INVALID"}</StatusBadge></Td>
+                        <Td><StatusBadge tone={isDeletedView ? "danger" : license.isValid ? "success" : "warning"}>{isDeletedView ? "DELETED" : license.isValid ? "VALID" : "INVALID"}</StatusBadge></Td>
                         <Td>
                           {canManage ? (
                             <div className="flex flex-wrap gap-2">
-                              <Button className="h-9 min-h-9 px-4" onClick={() => setEditing(license)} type="button" variant="secondary">Edit</Button>
-                              <Button className="h-9 min-h-9 px-4" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(license.id)} type="button" variant="danger"><Trash2 aria-hidden="true" className="size-4" />Delete</Button>
+                              {isDeletedView ? (
+                                <Tooltip label="Restore license">
+                                  <Button
+                                    aria-label={`Restore ${license.licenseType}`}
+                                    className="h-9 min-h-9 px-3"
+                                    disabled={restoreMutation.isPending}
+                                    onClick={() => restoreMutation.mutate(license.id)}
+                                    type="button"
+                                    variant="secondary"
+                                  >
+                                    <RotateCcw aria-hidden="true" className="size-4" />
+                                    Restore
+                                  </Button>
+                                </Tooltip>
+                              ) : (
+                                <>
+                                  <Tooltip label="Edit license">
+                                    <Button aria-label={`Edit ${license.licenseType}`} className="h-9 min-h-9 px-3" onClick={() => setEditing(license)} type="button" variant="secondary">
+                                      <Pencil aria-hidden="true" className="size-4" />
+                                      Edit
+                                    </Button>
+                                  </Tooltip>
+                                  <Tooltip label="Delete license">
+                                    <Button aria-label={`Delete ${license.licenseType}`} className="h-9 min-h-9 px-3" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(license.id)} type="button" variant="danger">
+                                      <Trash2 aria-hidden="true" className="size-4" />
+                                      Delete
+                                    </Button>
+                                  </Tooltip>
+                                </>
+                              )}
                             </div>
                           ) : <span className="text-sm text-muted">Read only</span>}
                         </Td>

@@ -13,13 +13,13 @@ import {
   Map,
   MapPinned,
   Menu,
-  MoreHorizontal,
   Plus,
   Route,
   ScrollText,
   Search,
+  Send,
+  Settings,
   ShieldCheck,
-  Star,
   Handshake,
   Truck,
   UserRound,
@@ -33,15 +33,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { logout } from "@/shared/api/modules/auth";
+import { getCompanyCreditWallet } from "@/shared/api/modules/companyCredits";
+import { getJobSeekerWallet } from "@/shared/api/modules/jobSeekerBilling";
 import { fallbackLanguages, listSupportedLanguages } from "@/shared/api/modules/localization";
 import { listNotifications } from "@/shared/api/modules/notifications";
-import { Button } from "@/shared/components/ui/Button";
+import { updateMyUser } from "@/shared/api/modules/users";
 import { Input } from "@/shared/components/ui/Form";
+import { Tooltip } from "@/shared/components/ui/Tooltip";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
+import { languageStorageKey } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { useUiStore } from "@/shared/stores/uiStore";
 import type { UserRole } from "@/shared/types/auth";
 import { useAuthStore } from "@/features/auth/authStore";
+import {AnimatePresence, motion} from "framer-motion";
 
 type NavShortcut = {
   adminOnly?: boolean;
@@ -89,14 +94,15 @@ const navSections: NavSection[] = [
     shortLabel: "Plan",
   },
   {
-    defaultTo: "/posts/planned",
+    defaultTo: "/posts/quick",
     allowedRoles: ["COMPANY_ADMIN", "COMPANY_DRIVER"],
     icon: MapPinned,
     id: "posts",
     items: [
+      { description: "Open transport demand from other companies", icon: Search, label: "Marketplace", to: "/posts/marketplace" },
+      { description: "Company-owned transport posts", icon: FileText, label: "My posts", to: "/posts/mine" },
       { description: "Create route and post together", icon: GitBranchPlus, label: "Quick route post", to: "/posts/quick" },
-      { description: "Reuse planned transport routes", icon: MapPinned, label: "Planned transport posts", to: "/posts/planned" },
-      { description: "Marketplace post workspace", icon: FileText, label: "All posts", to: "/posts" },
+      { description: "Reuse planned transport routes", icon: MapPinned, label: "Planned post", to: "/posts/planned" },
     ],
     label: "Posts",
     quickAction: { description: "Minimum route and post flow", icon: Plus, label: "Create quick post", to: "/posts/quick" },
@@ -120,12 +126,13 @@ const navSections: NavSection[] = [
     items: [
       { allowedRoles: ["JOB_SEEKER"], description: "Independent driver profile and readiness", icon: UserRound, label: "Profile", to: "/job-profile" },
       { description: "Lane-aware job marketplace feed", icon: BriefcaseBusiness, label: "Browse jobs", to: "/jobs" },
-      { allowedRoles: ["JOB_SEEKER"], description: "Your independent job listings", icon: FileText, label: "My listings", to: "/jobs/mine" },
-      { allowedRoles: ["JOB_SEEKER"], description: "Create a job seeker listing", icon: Plus, label: "Create listing", to: "/jobs/new" },
+      { allowedRoles: ["COMPANY_ADMIN", "JOB_SEEKER"], description: "Incoming submissions for your job posts", icon: Send, label: "Applications", to: "/jobs/applications" },
+      { allowedRoles: ["COMPANY_ADMIN", "JOB_SEEKER"], description: "Your job marketplace posts", icon: FileText, label: "My listings", to: "/jobs/mine" },
+      { allowedRoles: ["COMPANY_ADMIN", "JOB_SEEKER"], description: "Create a job marketplace post", icon: Plus, label: "Create listing", to: "/jobs/new" },
       { allowedRoles: ["JOB_SEEKER"], description: "Credits, quota, and purchases", icon: WalletCards, label: "Job wallet", to: "/job-wallet" },
     ],
     label: "Jobs",
-    quickAction: { allowedRoles: ["JOB_SEEKER"], description: "Publish an independent listing", icon: Plus, label: "Create listing", to: "/jobs/new" },
+    quickAction: { allowedRoles: ["COMPANY_ADMIN", "JOB_SEEKER"], description: "Publish a job marketplace post", icon: Plus, label: "Create listing", to: "/jobs/new" },
   },
   {
     defaultTo: "/vehicle-marketplace",
@@ -165,15 +172,6 @@ const navSections: NavSection[] = [
     label: "Docs",
   },
   {
-    defaultTo: "/reviews",
-    allowedRoles: ["COMPANY_ADMIN", "COMPANY_DRIVER"],
-    icon: Star,
-    id: "reviews",
-    items: [{ description: "Completed-contract feedback", icon: Star, label: "Reviews", to: "/reviews" }],
-    label: "Reviews",
-    shortLabel: "Review",
-  },
-  {
     defaultTo: "/company",
     allowedRoles: ["COMPANY_ADMIN", "COMPANY_DRIVER"],
     icon: Building2,
@@ -190,21 +188,9 @@ const navSections: NavSection[] = [
     quickAction: { adminOnly: true, description: "Invite and manage users", icon: Plus, label: "Manage team", to: "/team" },
     shortLabel: "Co.",
   },
-  {
-    defaultTo: "/notifications",
-    icon: MoreHorizontal,
-    id: "more",
-    items: [
-      { description: "Unread and recent system messages", icon: Bell, label: "Notifications", to: "/notifications" },
-      { allowedRoles: ["JOB_SEEKER"], description: "Credits and usage quota", icon: WalletCards, label: "Job wallet", to: "/job-wallet" },
-      { allowedRoles: ["JOB_SEEKER"], description: "Independent profile and marketplace readiness", icon: UserRound, label: "Job profile", to: "/job-profile" },
-      { allowedRoles: ["COMPANY_ADMIN", "COMPANY_DRIVER"], description: "Billing and plan workspace", icon: CreditCard, label: "Billing", to: "/billing" },
-      { allowedRoles: ["COMPANY_ADMIN", "COMPANY_DRIVER"], description: "Marketplace credits", icon: WalletCards, label: "Credits", to: "/company-credits" },
-      { allowedRoles: ["COMPANY_ADMIN", "COMPANY_DRIVER"], description: "Company settings", icon: Building2, label: "Company settings", to: "/company" },
-    ],
-    label: "More",
-  },
 ];
+
+const companyDriverSectionIds = new Set(["planning", "posts", "company"]);
 
 const languageFlags: Record<string, string> = {
   al: "AL",
@@ -220,6 +206,11 @@ function canSeeItem(item: { adminOnly?: boolean; allowedRoles?: UserRole[] }, ro
   return true;
 }
 
+function canSeeSection(section: NavSection, role: UserRole | undefined, isAdmin: boolean) {
+  if (role === "COMPANY_DRIVER" && !companyDriverSectionIds.has(section.id)) return false;
+  return canSeeItem(section, role, isAdmin);
+}
+
 function isRouteActive(pathname: string, to: string) {
   if (to === "/fleet") return pathname === "/fleet";
   if (to === "/posts") return pathname === "/posts";
@@ -231,7 +222,21 @@ function sectionForPath(pathname: string, sections: NavSection[]) {
 }
 
 function sectionItems(section: NavSection, role: UserRole | undefined, isAdmin: boolean) {
-  return section.items.filter((item) => canSeeItem(item, role, isAdmin));
+  const items = section.items.filter((item) => canSeeItem(item, role, isAdmin));
+  if (role === "COMPANY_DRIVER" && section.id === "posts") {
+    return items
+      .filter((item) => item.to === "/posts/mine")
+      .map((item) => ({ ...item, description: "Company transport posts assigned to your workspace", label: "Company posts" }));
+  }
+  if (role === "COMPANY_DRIVER" && section.id === "company") {
+    return items.filter((item) => item.to === "/company");
+  }
+  return items;
+}
+
+function sectionDefaultTo(section: NavSection, role: UserRole | undefined) {
+  if (role === "COMPANY_DRIVER" && section.id === "posts") return "/posts/mine";
+  return section.defaultTo;
 }
 
 export function AppShell() {
@@ -241,6 +246,7 @@ export function AppShell() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const clearUser = useAuthStore((state) => state.clearUser);
+  const setUser = useAuthStore((state) => state.setUser);
   const activeNavSectionId = useUiStore((state) => state.activeNavSectionId);
   const closeSecondaryPanel = useUiStore((state) => state.closeSecondaryPanel);
   const secondaryPanelOpen = useUiStore((state) => state.secondaryPanelOpen);
@@ -250,9 +256,10 @@ export function AppShell() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [panelSearch, setPanelSearch] = useState("");
   const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const hoverCloseTimeout = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const isAdmin = user?.role === "COMPANY_ADMIN";
-  const visibleSections = useMemo(() => navSections.filter((section) => canSeeItem(section, user?.role, isAdmin)), [isAdmin, user?.role]);
+  const visibleSections = useMemo(() => navSections.filter((section) => canSeeSection(section, user?.role, isAdmin)), [isAdmin, user?.role]);
   const activeSection = visibleSections.find((section) => section.id === activeNavSectionId) ?? sectionForPath(location.pathname, visibleSections);
   const hoveredSection = hoveredSectionId ? visibleSections.find((section) => section.id === hoveredSectionId) : null;
   const displayedSection = secondaryPanelOpen ? activeSection : hoveredSection;
@@ -260,6 +267,18 @@ export function AppShell() {
   const notificationsQuery = useQuery({
     queryFn: () => listNotifications({ pageSize: 5 }),
     queryKey: ["notifications", "shell", "latest"],
+    staleTime: 1000 * 30,
+  });
+  const companyWalletQuery = useQuery({
+    enabled: Boolean(user?.companyId && user.role !== "JOB_SEEKER"),
+    queryFn: getCompanyCreditWallet,
+    queryKey: ["company-credits", "wallet"],
+    staleTime: 1000 * 30,
+  });
+  const jobWalletQuery = useQuery({
+    enabled: user?.role === "JOB_SEEKER",
+    queryFn: getJobSeekerWallet,
+    queryKey: ["job-seeker-billing", "wallet"],
     staleTime: 1000 * 30,
   });
   const languages = languagesQuery.data?.length ? languagesQuery.data : fallbackLanguages;
@@ -270,6 +289,13 @@ export function AppShell() {
     onSuccess: () => {
       clearUser();
       queryClient.clear();
+    },
+  });
+  const languageMutation = useAppMutation({
+    mutationFn: updateMyUser,
+    onSuccess: (profile) => {
+      setUser(profile);
+      queryClient.setQueryData(["users", "me"], profile);
     },
   });
 
@@ -285,14 +311,46 @@ export function AppShell() {
     [],
   );
 
+  useEffect(() => {
+    if (!user?.preferredLanguage || user.preferredLanguage === i18n.language) return;
+    window.localStorage.setItem(languageStorageKey, user.preferredLanguage);
+    void i18n.changeLanguage(user.preferredLanguage);
+  }, [i18n, user?.preferredLanguage]);
+
+  const selectLanguage = (languageCode: string) => {
+    window.localStorage.setItem(languageStorageKey, languageCode);
+    void i18n.changeLanguage(languageCode);
+    setLanguageOpen(false);
+    if (user) languageMutation.mutate({ preferredLanguage: languageCode });
+  };
+
   const panelItems = displayedSection ? sectionItems(displayedSection, user?.role, isAdmin) : [];
   const filteredPanelItems = panelItems.filter((item) => {
     const needle = panelSearch.trim().toLowerCase();
     if (!needle) return true;
     return `${item.label} ${item.description ?? ""}`.toLowerCase().includes(needle);
   });
-  const quickAction = displayedSection?.quickAction && canSeeItem(displayedSection.quickAction, user?.role, isAdmin) ? displayedSection.quickAction : null;
-  const leftOffset = secondaryPanelOpen ? "lg:pl-[412px]" : "lg:pl-[86px]";
+  const quickAction = displayedSection?.quickAction && canSeeItem(displayedSection.quickAction, user?.role, isAdmin) && !(user?.role === "COMPANY_DRIVER" && displayedSection.id === "posts") ? displayedSection.quickAction : null;
+  const leftOffset = secondaryPanelOpen ? "lg:pl-[180px]" : "lg:pl-[86px]";
+  const accountLink = user?.role === "JOB_SEEKER"
+    ? { label: "Profile", to: "/job-profile" }
+    : null;
+  const walletLink = user?.role === "JOB_SEEKER"
+    ? {
+      balance: jobWalletQuery.data?.balanceCredits,
+      isLoading: jobWalletQuery.isLoading,
+      label: "Job wallet",
+      to: "/job-wallet",
+    }
+    : user?.companyId
+      ? {
+        balance: companyWalletQuery.data?.balanceCredits,
+        isLoading: companyWalletQuery.isLoading,
+        label: "Company credits",
+        to: "/company-credits",
+      }
+      : null;
+  const walletBalanceLabel = walletLink?.isLoading ? "Loading credits" : `${walletLink?.balance ?? 0} credits`;
 
   const cancelHoverClose = () => {
     if (hoverCloseTimeout.current) {
@@ -317,7 +375,7 @@ export function AppShell() {
   const openSection = (section: NavSection) => {
     setActiveNavSection(section.id);
     setPanelSearch("");
-    void navigate(section.defaultTo);
+    void navigate(sectionDefaultTo(section, user?.role));
   };
 
   return (
@@ -342,42 +400,44 @@ export function AppShell() {
         <nav className="flex flex-1 flex-col items-center gap-1 overflow-y-auto px-0.5 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {visibleSections.map((section) => {
             const selected = section.id === activeSection.id;
-            const panelOpenForSection = displayedSection?.id === section.id;
             return (
-              <button
-                aria-current={selected ? "page" : undefined}
-                aria-label={`Open ${section.label}`}
-                className={cn(
-                  "group relative flex w-11 flex-col items-center gap-0 rounded-lg px-1  py-1.5 text-[10px] font-bold leading-[1.05] text-white/86 outline-none transition hover:bg-white/12 hover:text-white",
-                  "focus-visible:ring-2 focus-visible:ring-white/50",
-                  selected && " text-white hover:bg-white/16 hover:text-white",
-                )}
-                key={section.id}
-                onBlur={schedulePreviewClose}
-                onClick={() => openSection(section)}
-                onFocus={() => previewSection(section.id)}
-                onMouseEnter={() => previewSection(section.id)}
-                onMouseLeave={schedulePreviewClose}
-                type="button"
-              >
-                <span className={cn("grid size-6 place-items-center rounded-lg transition", selected && "bg-white text-[#4f32b7] shadow-sm")}>
-                  <section.icon className="size-[16px]" aria-hidden="true" />
-                </span>
-                <span className="w-full truncate text-center text-[10px]">{section.shortLabel ?? section.label}</span>
-                {panelOpenForSection ? (
-                  <span className="absolute -right-[12px] top-1/2 z-40 size-4 -translate-y-1/2 rotate-45 rounded-[3px] bg-[#f7f7f8] shadow-[-1px_1px_0_rgba(224,224,224,0.9)]" aria-hidden="true" />
-                ) : null}
-                <span className="pointer-events-none absolute left-[66px] top-1/2 z-50 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-[#1d1d1f] px-2.5 py-1.5 text-xs font-semibold text-white shadow-lg group-hover:block group-focus-visible:block">
-                  {section.label}
-                </span>
-              </button>
+              <Tooltip key={section.id} label={section.label} side="right">
+                <button
+                  aria-current={selected ? "page" : undefined}
+                  aria-label={`Open ${section.label}`}
+                  className={cn(
+                    "relative flex w-11 flex-col items-center gap-0 rounded-lg px-1  py-1.5 text-[10px] font-bold leading-[1.05] text-white/86 outline-none transition hover:bg-white/12 hover:text-white",
+                    "focus-visible:ring-2 focus-visible:ring-white/50",
+                    selected && " text-white hover:bg-white/16 hover:text-white",
+                  )}
+                  onBlur={schedulePreviewClose}
+                  onClick={() => openSection(section)}
+                  onFocus={() => previewSection(section.id)}
+                  onMouseEnter={() => previewSection(section.id)}
+                  onMouseLeave={schedulePreviewClose}
+                  type="button"
+                >
+                  <span className={cn("grid size-6 place-items-center rounded-lg transition", selected && "bg-white text-[#4f32b7] shadow-sm")}>
+                    <section.icon className="size-[16px]" aria-hidden="true" />
+                  </span>
+                  <span className="w-full truncate text-center text-[10px]">{section.shortLabel ?? section.label}</span>
+                  {/*{panelOpenForSection ? (*/}
+                  {/*  <span className="absolute -right-[12px] top-1/2 z-40 size-4 -translate-y-1/2 rotate-45 rounded-[3px] bg-[#f7f7f8] shadow-[-1px_1px_0_rgba(224,224,224,0.9)]" aria-hidden="true" />*/}
+                  {/*) : null}*/}
+                </button>
+              </Tooltip>
             );
           })}
         </nav>
       </aside>
 
       {displayedSection ? (
-        <aside
+          <AnimatePresence>
+        <motion.aside
+            initial={{ opacity: 0, x: 0 }}
+            animate={{ opacity: 1, x: 5 }}
+            transition={{ duration: 0 }}
+            exit={{ opacity: 0, x: 0, transition: { duration: 12 } }}
           className="fixed bottom-30 left-[84px] top-3 z-20 hidden w-60 rounded-xl border border-black/10 bg-[#f7f7f8] shadow-[0_14px_34px_rgba(29,29,31,0.16)] transition-all duration-200 lg:block"
           onMouseEnter={cancelHoverClose}
           onMouseLeave={schedulePreviewClose}
@@ -495,7 +555,8 @@ export function AppShell() {
               )}
             </div>
           </div>
-        </aside>
+        </motion.aside>
+          </AnimatePresence>
       ) : null}
 
       {mobileNavOpen ? (
@@ -571,10 +632,19 @@ export function AppShell() {
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold">{user ? `${user.firstName} ${user.lastName}` : "Cargo Agent"}</p>
-              <p className="text-xs text-muted">{user?.role?.replace("_", " ")}</p>
-            </div>
+            {walletLink ? (
+              <Tooltip label={`${walletLink.label}: ${walletBalanceLabel}`}>
+                <NavLink
+                  aria-label={`${walletLink.label}: ${walletBalanceLabel}`}
+                  className="flex h-9 min-w-9 items-center justify-center gap-2 rounded-lg border border-border bg-card px-2.5 text-xs font-semibold text-foreground shadow-sm outline-none transition hover:border-slate-300 hover:bg-surface-pearl focus-visible:ring-2 focus-visible:ring-slate-300"
+                  to={walletLink.to}
+                >
+                  <WalletCards className="size-[15px] text-primary" aria-hidden="true" />
+                  <span className="hidden sm:inline">{walletBalanceLabel}</span>
+                  <span className="sm:hidden">{walletLink.isLoading ? "..." : walletLink.balance ?? 0}</span>
+                </NavLink>
+              </Tooltip>
+            ) : null}
             <div className="relative">
               <button
                 aria-expanded={languageOpen}
@@ -592,10 +662,7 @@ export function AppShell() {
                     <button
                       className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold hover:bg-surface-pearl focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                       key={language.code}
-                      onClick={() => {
-                        void i18n.changeLanguage(language.code);
-                        setLanguageOpen(false);
-                      }}
+                      onClick={() => selectLanguage(language.code)}
                       type="button"
                     >
                       <span>{languageFlags[language.code] ?? language.code.toUpperCase()}</span>
@@ -633,16 +700,63 @@ export function AppShell() {
                 )}
               </div>
             </div>
-            <Button
-              aria-label="Log out"
-              className="size-9 px-0"
-              disabled={logoutMutation.isPending}
-              onClick={() => logoutMutation.mutate()}
-              type="button"
-              variant="ghost"
-            >
-              <LogOut className="size-4" aria-hidden="true" />
-            </Button>
+            <div className="relative">
+              <button
+                aria-expanded={accountMenuOpen}
+                aria-label="Open account menu"
+                className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-2.5 text-left shadow-sm outline-none transition hover:border-slate-300 focus-visible:ring-2 focus-visible:ring-slate-300"
+                onBlur={() => window.setTimeout(() => setAccountMenuOpen(false), 120)}
+                onClick={() => setAccountMenuOpen((current) => !current)}
+                type="button"
+              >
+                <span className="grid size-6 place-items-center rounded-md bg-surface-pearl text-xs font-semibold text-primary">
+                  {user?.firstName?.[0] ?? "C"}{user?.lastName?.[0] ?? "A"}
+                </span>
+                <span className="hidden min-w-0 sm:block">
+                  <span className="block truncate text-xs font-semibold text-foreground">{user ? `${user.firstName} ${user.lastName}` : "Cargo Agent"}</span>
+                  {/*<span className="block truncate text-[11px] text-muted">{user?.role?.replace("_", " ")}</span>*/}
+                </span>
+                <Settings className="size-4 text-muted" aria-hidden="true" />
+              </button>
+              {accountMenuOpen ? (
+                <div className="absolute right-0 top-10 z-40 w-56 rounded-lg border border-border bg-card p-1 shadow-lg">
+                  <div className="border-b border-border px-2.5 py-2">
+                    <p className="truncate text-sm font-semibold text-foreground">{user ? `${user.firstName} ${user.lastName}` : "Cargo Agent"}</p>
+                    <p className="truncate text-xs text-muted">{user?.email}</p>
+                  </div>
+                  {accountLink ? (
+                    <NavLink
+                      className="mt-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm font-semibold hover:bg-surface-pearl focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                      onClick={() => setAccountMenuOpen(false)}
+                      to={accountLink.to}
+                    >
+                      <UserRound className="size-4 text-muted" aria-hidden="true" />
+                      {accountLink.label}
+                    </NavLink>
+                  ) : null}
+                  <NavLink
+                    className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm font-semibold hover:bg-surface-pearl focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                    onClick={() => setAccountMenuOpen(false)}
+                    to="/account/password"
+                  >
+                    <Settings className="size-4 text-muted" aria-hidden="true" />
+                    Change password
+                  </NavLink>
+                  <button
+                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-semibold text-danger hover:bg-surface-pearl focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                    disabled={logoutMutation.isPending}
+                    onClick={() => {
+                      setAccountMenuOpen(false);
+                      logoutMutation.mutate();
+                    }}
+                    type="button"
+                  >
+                    <LogOut className="size-4" aria-hidden="true" />
+                    Log out
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </header>
         <main className="mx-auto w-full max-w-7xl px-4 py-1 sm:px-5">

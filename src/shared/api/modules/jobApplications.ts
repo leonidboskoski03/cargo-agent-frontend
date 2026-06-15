@@ -47,6 +47,8 @@ export type JobApplicationSubmissionRecord = {
   };
   createdAt: string;
   deletedAt?: string | null;
+  documentName?: string | null;
+  documentUrl?: string | null;
   id: string;
   isPromoted?: boolean;
   jobApplicationId: string;
@@ -87,6 +89,8 @@ export type UpdateJobApplicationInput = Partial<Omit<CreateJobApplicationInput, 
 }>;
 
 export type ApplyToJobApplicationInput = {
+  documentName?: string;
+  documentUrl?: string;
   message?: string;
 };
 
@@ -94,8 +98,12 @@ export function listJobApplications(params?: { city?: string; countryCode?: stri
   return unwrapData<JobApplicationRecord[]>(apiClient.get("/job-applications", { params }));
 }
 
-export function listMyJobApplications() {
-  return unwrapData<JobApplicationRecord[]>(apiClient.get("/job-applications/mine"));
+export type JobApplicationListParams = {
+  deleted?: "active" | "only" | "include";
+};
+
+export function listMyJobApplications(params?: JobApplicationListParams) {
+  return unwrapData<JobApplicationRecord[]>(apiClient.get("/job-applications/mine", { params }));
 }
 
 export function createJobApplication(input: CreateJobApplicationInput) {

@@ -27,6 +27,19 @@ export type AcceptCompanyInviteInput = {
   token: string;
 };
 
+export type CompanyInvitePreview = {
+  company: {
+    id: string;
+    name: string;
+  };
+  companyId: string;
+  expiresAt: string;
+  id: string;
+  invitedEmail: string;
+  status: InviteStatus;
+  targetRole: CompanyInvite["targetRole"];
+};
+
 export type AcceptCompanyInviteResponse = {
   invite: CompanyInvite;
   nextAction: {
@@ -42,6 +55,10 @@ export function listCompanyInvites(params?: { status?: InviteStatus }) {
 
 export function createCompanyInvite(input: CreateInviteInput) {
   return unwrapData<CompanyInvite>(apiClient.post("/company-invites", input));
+}
+
+export function previewCompanyInvite(token: string) {
+  return unwrapData<CompanyInvitePreview>(apiClient.get("/company-invites/preview", { params: { token } }));
 }
 
 export function revokeCompanyInvite(inviteId: string) {

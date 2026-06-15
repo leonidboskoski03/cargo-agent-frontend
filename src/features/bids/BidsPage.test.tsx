@@ -255,4 +255,60 @@ describe("BidsPage", () => {
     expect(await screen.findByText("Bid created")).toBeInTheDocument();
     expect(screen.getAllByText(/240 km/i).length).toBeGreaterThanOrEqual(2);
   });
+
+  it("shows deleted sent bids in a dedicated view and restores owned bids", async () => {
+    bidsApi.listBids.mockImplementation((params?: { deleted?: string }) => Promise.resolve(
+      params?.deleted === "only"
+        ? [{
+          carrierCompanyId: "shipper_company",
+          carrierCompany: { city: "Skopje", countryCode: "MK", id: "shipper_company", isVerified: false, name: "Shipper Co" },
+          createdAt: "2026-06-09T10:00:00.000Z",
+          createdByUserId: "admin_1",
+          currency: "EUR",
+          deletedAt: "2026-06-12T00:00:00.000Z",
+          estimatedDeliveryAt: null,
+          estimatedPickupAt: null,
+          id: "bid_deleted",
+          message: "Can cover this lane.",
+          offeredPriceAmount: "750",
+          post: {
+            cargoDescription: "Pallets",
+            companyId: "carrier_company",
+            currency: "EUR",
+            deletedAt: null,
+            id: "post_123456789",
+            priceAmount: null,
+            priceType: "REQUEST_QUOTE",
+            route: {
+              destinationLocation: { city: "Sofia", countryCode: "BG", id: "loc_2" },
+              distanceKm: 240,
+              estimatedDurationMinutes: 260,
+              id: "route_1",
+              originLocation: { city: "Skopje", countryCode: "MK", id: "loc_1" },
+            },
+            routeId: "route_1",
+            status: "OPEN",
+            title: "Deleted sent bid",
+          },
+          postId: "post_123456789",
+          status: "PENDING",
+          updatedAt: "2026-06-09T10:00:00.000Z",
+        }]
+        : [],
+    ));
+    bidsApi.restoreBid.mockResolvedValue({});
+
+    renderWithProviders(<BidsPage />, "/bids?scope=sent");
+
+    expect(await screen.findByText("No bids found")).toBeInTheDocument();
+    expect(bidsApi.listBids).toHaveBeenCalledWith({ deleted: "active", postId: undefined, scope: "sent", status: undefined });
+
+    await userEvent.click(screen.getByRole("button", { name: /^deleted$/i }));
+
+    expect(await screen.findByText("Deleted sent bid")).toBeInTheDocument();
+    expect(bidsApi.listBids).toHaveBeenCalledWith({ deleted: "only", postId: undefined, scope: "sent", status: undefined });
+    await userEvent.click(screen.getByRole("button", { name: /restore/i }));
+
+    expect(bidsApi.restoreBid).toHaveBeenCalledWith("bid_deleted", expect.anything());
+  });
 });

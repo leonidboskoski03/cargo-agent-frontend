@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Building2, CalendarClock, ExternalLink, MapPinned, RotateCcw, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Building2, CalendarClock, ExternalLink, MapPinned, RotateCcw, Save, Star, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -208,6 +208,12 @@ export function ContractDetailPage() {
                 <Trash2 aria-hidden="true" className="size-4" />
                 Delete
               </Button>
+            ) : null}
+            {contract.status === "COMPLETED" && isInvolved ? (
+              <Link className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" to={`/reviews?contractId=${contract.id}`}>
+                <Star aria-hidden="true" className="size-4" />
+                Review contract
+              </Link>
             ) : null}
           </div>
         }

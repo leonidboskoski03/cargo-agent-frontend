@@ -117,6 +117,17 @@ describe("JobProfilePage", () => {
     expect(await screen.findByText("CE truck license")).toBeInTheDocument();
   });
 
+  it("saves preferred routes from the post-login profile editor", async () => {
+    renderPage();
+
+    await userEvent.type(await screen.findByLabelText(/Preferred routes/), "MK-BG, MK-RS");
+    await userEvent.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(usersApi.updateMyUser.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({
+      preferredRoutes: ["MK-BG", "MK-RS"],
+    }));
+  });
+
   it("lets job seekers add their own license", async () => {
     renderPage();
 

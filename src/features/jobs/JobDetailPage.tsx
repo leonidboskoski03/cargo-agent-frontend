@@ -1,8 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Send, Sparkles } from "lucide-react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useParams } from "react-router-dom";
+import { uploadDocument } from "@/shared/api/modules/documents";
 import {
   applyToJobApplication,
   listJobApplications,
@@ -13,9 +15,11 @@ import {
 } from "@/shared/api/modules/jobApplications";
 import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
-import { Field, Textarea } from "@/shared/components/ui/Form";
+import { FileUploadControl } from "@/shared/components/ui/FileUploadControl";
+import { Field, Select, Textarea } from "@/shared/components/ui/Form";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
+import { fileToBase64 } from "@/shared/lib/files";
 import { humanizeEnum } from "@/shared/lib/formatters";
 import { useAuthStore } from "@/features/auth/authStore";
 import { formatJobLocation, formatJobOwner, formatJobPay, formatSubmissionOwner, jobStatusTone } from "./jobFormatters";
@@ -25,8 +29,9 @@ export function JobDetailPage() {
   const { jobApplicationId = "" } = useParams();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
+  const [applicationFile, setApplicationFile] = useState<File | null>(null);
   const feedQuery = useQuery({ queryFn: () => listJobApplications(), queryKey: ["job-applications", "feed"] });
-  const mineQuery = useQuery({ queryFn: listMyJobApplications, queryKey: ["job-applications", "mine"] });
+  const mineQuery = useQuery({ queryFn: () => listMyJobApplications({ deleted: "include" }), queryKey: ["job-applications", "mine", "include-deleted"] });
   const jobs = [...(feedQuery.data ?? []), ...(mineQuery.data ?? [])];
   const job = jobs.find((item) => item.id === jobApplicationId);
   const ownsJob = Boolean(job && job.createdByUserId === user?.id);
@@ -38,13 +43,31 @@ export function JobDetailPage() {
   });
   const form = useForm<JobApplyFormInput, unknown, JobApplyFormValues>({
     resolver: zodResolver(jobApplySchema),
-    defaultValues: { message: "" },
+    defaultValues: { documentName: "CV", documentUrl: "", message: "" },
   });
   const applyMutation = useAppMutation({
     messages: { success: "Application submitted" },
-    mutationFn: (values: JobApplyFormValues) => applyToJobApplication(jobApplicationId, values),
+    mutationFn: async (values: JobApplyFormValues) => {
+      if (!applicationFile) return applyToJobApplication(jobApplicationId, { message: values.message });
+
+      const document = await uploadDocument({
+        contentBase64: await fileToBase64(applicationFile),
+        fileName: applicationFile.name,
+        kind: "OTHER",
+        metadataJson: { jobApplicationId, purpose: "JOB_APPLICATION_ATTACHMENT" },
+        mimeType: applicationFile.type || "application/pdf",
+        name: values.documentName ?? "Application document",
+      });
+
+      return applyToJobApplication(jobApplicationId, {
+        documentName: values.documentName,
+        documentUrl: document.url,
+        message: values.message,
+      });
+    },
     onSuccess: () => {
       form.reset();
+      setApplicationFile(null);
       void queryClient.invalidateQueries({ queryKey: ["job-applications", jobApplicationId, "submissions"] });
     },
   });
@@ -129,6 +152,27 @@ export function JobDetailPage() {
               <Field error={form.formState.errors.message} label="Message">
                 <Textarea {...form.register("message")} placeholder="Availability, fit, contact context, or next step." />
               </Field>
+              <div className="grid gap-4 md:grid-cols-[0.42fr_0.58fr]">
+                <Field error={form.formState.errors.documentName} label="Document label">
+                  <Select {...form.register("documentName")}>
+                    <option value="CV">CV</option>
+                    <option value="Resume">Resume</option>
+                    <option value="Portfolio">Portfolio</option>
+                    <option value="Company profile">Company profile</option>
+                    <option value="Other">Other</option>
+                  </Select>
+                </Field>
+                <Field error={form.formState.errors.documentUrl} label="Application document">
+                  <FileUploadControl
+                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    disabled={applyMutation.isPending}
+                    error={applyMutation.error}
+                    isUploading={applyMutation.isPending}
+                    onFileSelect={setApplicationFile}
+                    value={applicationFile?.name}
+                  />
+                </Field>
+              </div>
               <Button disabled={applyMutation.isPending} type="submit">
                 <Send className="size-4" aria-hidden="true" />
                 Submit
@@ -156,6 +200,7 @@ export function JobDetailPage() {
               <tr>
                 <Th>Submitted by</Th>
                 <Th>Message</Th>
+                <Th>Document</Th>
                 <Th>Status</Th>
                 <Th>Promotion</Th>
                 <Th>Actions</Th>
@@ -166,6 +211,7 @@ export function JobDetailPage() {
                 <tr key={submission.id}>
                   <Td>{formatSubmissionOwner(submission)}</Td>
                   <Td>{submission.message ?? "No message"}</Td>
+                  <Td>{submission.documentUrl ? <a className="font-semibold text-primary" href={submission.documentUrl} rel="noreferrer" target="_blank">{submission.documentName ?? "Document"}</a> : "No document"}</Td>
                   <Td><StatusBadge tone={jobStatusTone(submission.status)}>{humanizeEnum(submission.status ?? "PENDING")}</StatusBadge></Td>
                   <Td>{submission.isPromoted ? `Promoted until ${submission.promotedUntil?.slice(0, 10) ?? "active"}` : "Not promoted"}</Td>
                   <Td>

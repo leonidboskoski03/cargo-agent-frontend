@@ -1,6 +1,6 @@
 import { apiClient, unwrapData } from "@/shared/api/apiClient";
 
-export type PostStatus = "OPEN" | "ASSIGNED" | "CANCELLED" | "EXPIRED";
+export type PostStatus = "DRAFT" | "OPEN" | "ASSIGNED" | "ARCHIVED" | "CANCELLED" | "EXPIRED";
 export type PostPriceType = "FIXED" | "NEGOTIABLE" | "REQUEST_QUOTE";
 export type PostScope = "marketplace" | "mine";
 export type VehicleBodyType = "TILT" | "BOX" | "FLATBED" | "REEFER" | "TANKER";
@@ -77,11 +77,18 @@ export type CreatePostInput = {
   priceAmount?: string;
   priceType: PostPriceType;
   routeId: string;
+  status?: Extract<PostStatus, "DRAFT" | "OPEN">;
   title?: string;
   weightKg?: number;
 };
 
-export function listPosts(params?: { scope?: PostScope; status?: PostStatus }) {
+export type PostListParams = {
+  deleted?: "active" | "only" | "include";
+  scope?: PostScope;
+  status?: PostStatus;
+};
+
+export function listPosts(params?: PostListParams) {
   return unwrapData<PostRecord[]>(apiClient.get("/posts", { params }));
 }
 

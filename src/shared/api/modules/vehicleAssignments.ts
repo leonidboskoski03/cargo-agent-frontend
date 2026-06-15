@@ -31,8 +31,12 @@ export type VehicleAssignmentInput = {
   vehicleId: string;
 };
 
-export function listVehicleAssignments() {
-  return unwrapData<VehicleAssignmentRecord[]>(apiClient.get("/vehicle-assignments"));
+export type VehicleAssignmentListParams = {
+  deleted?: "active" | "only" | "include";
+};
+
+export function listVehicleAssignments(params?: VehicleAssignmentListParams) {
+  return unwrapData<VehicleAssignmentRecord[]>(apiClient.get("/vehicle-assignments", { params }));
 }
 
 export function getVehicleAssignment(assignmentId: string) {

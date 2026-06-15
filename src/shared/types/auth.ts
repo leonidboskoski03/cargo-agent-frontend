@@ -8,4 +8,5 @@ export type AuthUser = {
   lastName: string;
   email: string;
   imageUrl?: string | null;
+  preferredLanguage?: string | null;
 };

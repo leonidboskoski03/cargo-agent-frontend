@@ -15,6 +15,7 @@ import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
 import { Field, Input, Select } from "@/shared/components/ui/Form";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
+import { Tooltip } from "@/shared/components/ui/Tooltip";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { humanizeEnum } from "@/shared/lib/formatters";
 import { useAuthStore } from "@/features/auth/authStore";
@@ -30,10 +31,12 @@ export function JobsPage({ scope = "feed" }: JobsPageProps) {
   const user = useAuthStore((state) => state.user);
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ description: "", expectedPayAmount: "", preferredCity: "", preferredCountryCode: "", title: "" });
+  const [registryView, setRegistryView] = useState<"active" | "deleted">("active");
   const isMine = scope === "mine";
+  const isDeletedView = registryView === "deleted";
   const query = useQuery({
-    queryFn: isMine ? listMyJobApplications : () => listJobApplications(),
-    queryKey: ["job-applications", scope],
+    queryFn: isMine ? () => listMyJobApplications({ deleted: isDeletedView ? "only" : "active" }) : () => listJobApplications(),
+    queryKey: ["job-applications", scope, isMine ? registryView : "feed"],
   });
   const jobs = query.data ?? [];
   const q = searchParams.get("q") ?? "";
@@ -113,10 +116,10 @@ export function JobsPage({ scope = "feed" }: JobsPageProps) {
     <div className="space-y-6">
       <PageHeader
         action={
-          user?.role === "JOB_SEEKER" ? (
+          user?.role === "JOB_SEEKER" || user?.role === "COMPANY_ADMIN" ? (
             <Link className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground" to="/jobs/new">
               <Plus className="size-4" aria-hidden="true" />
-              Create listing
+              {user.role === "COMPANY_ADMIN" ? "Create job post" : "Create listing"}
             </Link>
           ) : null
         }
@@ -143,13 +146,41 @@ export function JobsPage({ scope = "feed" }: JobsPageProps) {
             Clear
           </Button>
         </div>
+        {isMine ? (
+          <div className="mt-4 inline-flex w-fit rounded-lg border border-border bg-surface-pearl p-1" aria-label="Job listing registry view">
+            <Button
+              aria-pressed={!isDeletedView}
+              className="min-h-8 px-3 py-1 text-sm"
+              onClick={() => {
+                setEditingJobId(null);
+                setRegistryView("active");
+              }}
+              type="button"
+              variant={!isDeletedView ? "secondary" : "ghost"}
+            >
+              Active
+            </Button>
+            <Button
+              aria-pressed={isDeletedView}
+              className="min-h-8 px-3 py-1 text-sm"
+              onClick={() => {
+                setEditingJobId(null);
+                setRegistryView("deleted");
+              }}
+              type="button"
+              variant={isDeletedView ? "secondary" : "ghost"}
+            >
+              Deleted
+            </Button>
+          </div>
+        ) : null}
       </Surface>
 
       {filteredJobs.length === 0 ? (
         <EmptyState
           action={user?.role === "JOB_SEEKER" ? <Link className="text-sm font-semibold text-primary" to="/jobs/new">Create your first listing</Link> : null}
-          description={jobs.length === 0 ? "No job listings are available for your lane yet." : "No jobs match the current filters."}
-          title={jobs.length === 0 ? "No jobs yet" : "No matching jobs"}
+          description={jobs.length === 0 ? isDeletedView ? "Deleted job listings will appear here after you remove them from the active registry." : "No job listings are available for your lane yet." : "No jobs match the current filters."}
+          title={jobs.length === 0 ? isDeletedView ? "No deleted jobs yet" : "No jobs yet" : "No matching jobs"}
         />
       ) : (
         <Table>
@@ -201,7 +232,7 @@ export function JobsPage({ scope = "feed" }: JobsPageProps) {
                     ) : formatJobPay(job)}
                   </Td>
                   <Td>
-                    {isMine && ownsJob && !job.deletedAt ? (
+                    {isMine && ownsJob && !isDeletedView ? (
                       <Select
                         className="h-9 min-w-28"
                         disabled={statusMutation.isPending}
@@ -220,43 +251,55 @@ export function JobsPage({ scope = "feed" }: JobsPageProps) {
                     <div className="flex flex-wrap gap-2">
                       {isEditing ? (
                         <>
-                          <Button aria-label={`Save ${job.title}`} className="h-9 min-h-9 px-3" disabled={updateMutation.isPending || editForm.title.trim().length < 3} onClick={() => updateMutation.mutate({ id: job.id, values: editForm })} type="button">
-                            <Save className="size-4" aria-hidden="true" />
-                            Save
-                          </Button>
-                          <Button aria-label={`Cancel editing ${job.title}`} className="h-9 min-h-9 px-3" onClick={() => setEditingJobId(null)} type="button" variant="secondary">
-                            <X className="size-4" aria-hidden="true" />
-                            Cancel
-                          </Button>
+                          <Tooltip label="Save listing changes">
+                            <Button aria-label={`Save ${job.title}`} className="h-9 min-h-9 px-3" disabled={updateMutation.isPending || editForm.title.trim().length < 3} onClick={() => updateMutation.mutate({ id: job.id, values: editForm })} type="button">
+                              <Save className="size-4" aria-hidden="true" />
+                              Save
+                            </Button>
+                          </Tooltip>
+                          <Tooltip label="Cancel editing">
+                            <Button aria-label={`Cancel editing ${job.title}`} className="h-9 min-h-9 px-3" onClick={() => setEditingJobId(null)} type="button" variant="secondary">
+                              <X className="size-4" aria-hidden="true" />
+                              Cancel
+                            </Button>
+                          </Tooltip>
                         </>
                       ) : (
                         <Link className="inline-flex min-h-9 items-center rounded-lg border border-primary bg-card px-3 py-1.5 text-sm text-primary" to={`/jobs/${job.id}`}>
                           Open
                         </Link>
                       )}
-                      {!isEditing && isMine && ownsJob && !job.deletedAt ? (
-                        <Button aria-label={`Edit ${job.title}`} className="h-9 min-h-9 px-3" onClick={() => startEdit(job)} type="button" variant="secondary">
-                          <Pencil className="size-4" aria-hidden="true" />
-                          Edit
-                        </Button>
+                      {!isEditing && isMine && ownsJob && !isDeletedView ? (
+                        <Tooltip label="Edit listing">
+                          <Button aria-label={`Edit ${job.title}`} className="h-9 min-h-9 px-3" onClick={() => startEdit(job)} type="button" variant="secondary">
+                            <Pencil className="size-4" aria-hidden="true" />
+                            Edit
+                          </Button>
+                        </Tooltip>
                       ) : null}
-                      {!isEditing && ownsJob && user?.role === "JOB_SEEKER" && !job.deletedAt ? (
-                        <Button className="h-9 min-h-9 px-3" disabled={promoteMutation.isPending} onClick={() => promoteMutation.mutate(job.id)} type="button" variant="secondary">
-                          <Sparkles className="size-4" aria-hidden="true" />
-                          Promote
-                        </Button>
+                      {!isEditing && ownsJob && user?.role === "JOB_SEEKER" && !isDeletedView ? (
+                        <Tooltip label="Promote this listing">
+                          <Button className="h-9 min-h-9 px-3" disabled={promoteMutation.isPending} onClick={() => promoteMutation.mutate(job.id)} type="button" variant="secondary">
+                            <Sparkles className="size-4" aria-hidden="true" />
+                            Promote
+                          </Button>
+                        </Tooltip>
                       ) : null}
-                      {!isEditing && isMine && ownsJob && !job.deletedAt ? (
-                        <Button aria-label={`Delete ${job.title}`} className="h-9 min-h-9 px-3" disabled={deleteMutation.isPending} onClick={() => window.confirm("Delete this job listing? It will be hidden from the public job feed.") && deleteMutation.mutate(job.id)} type="button" variant="danger">
-                          <Trash2 className="size-4" aria-hidden="true" />
-                          Delete
-                        </Button>
+                      {!isEditing && isMine && ownsJob && !isDeletedView ? (
+                        <Tooltip label="Delete listing">
+                          <Button aria-label={`Delete ${job.title}`} className="h-9 min-h-9 px-3" disabled={deleteMutation.isPending} onClick={() => window.confirm("Delete this job listing? It will be hidden from the public job feed.") && deleteMutation.mutate(job.id)} type="button" variant="danger">
+                            <Trash2 className="size-4" aria-hidden="true" />
+                            Delete
+                          </Button>
+                        </Tooltip>
                       ) : null}
-                      {!isEditing && isMine && ownsJob && job.deletedAt ? (
-                        <Button aria-label={`Restore ${job.title}`} className="h-9 min-h-9 px-3" disabled={restoreMutation.isPending} onClick={() => restoreMutation.mutate(job.id)} type="button" variant="secondary">
-                          <RotateCcw className="size-4" aria-hidden="true" />
-                          Restore
-                        </Button>
+                      {!isEditing && isMine && ownsJob && isDeletedView ? (
+                        <Tooltip label="Restore listing">
+                          <Button aria-label={`Restore ${job.title}`} className="h-9 min-h-9 px-3" disabled={restoreMutation.isPending} onClick={() => restoreMutation.mutate(job.id)} type="button" variant="secondary">
+                            <RotateCcw className="size-4" aria-hidden="true" />
+                            Restore
+                          </Button>
+                        </Tooltip>
                       ) : null}
                     </div>
                   </Td>

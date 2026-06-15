@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "@/features/auth/authStore";
@@ -73,5 +74,32 @@ describe("CompanyCreditsPage", () => {
     expect(screen.getAllByText(/2 credits/).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /buy credits/i })).toBeInTheDocument();
     expect(await screen.findByText("Ready for sandbox")).toBeInTheDocument();
+  });
+
+  it("disables company credit checkout when pack prices are missing", async () => {
+    billingReadinessApi.getBillingReadiness.mockResolvedValue({
+      bullmqEnabled: true,
+      companyCreditPricesConfigured: false,
+      jobSeekerCreditPricesConfigured: true,
+      proPriceConfigured: true,
+      stripeSecretConfigured: true,
+      stripeWebhookSecretConfigured: true,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/company credit pack stripe prices are missing/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /buy credits/i })).toBeDisabled();
+  });
+
+  it("shows friendly setup copy when company credit checkout fails", async () => {
+    companyCreditsApi.createCompanyCreditCheckoutSession.mockRejectedValue(new Error("Missing company credit pack prices"));
+
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: /buy credits/i }));
+
+    expect(await screen.findByText(/company credit checkout is not ready yet/i)).toBeInTheDocument();
+    expect(screen.queryByText("Missing company credit pack prices")).not.toBeInTheDocument();
   });
 });

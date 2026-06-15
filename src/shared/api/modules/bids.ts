@@ -99,7 +99,14 @@ export type CreateBidInput = {
   postId: string;
 };
 
-export function listBids(params?: { postId?: string; scope?: BidScope; status?: BidStatus }) {
+export type BidListParams = {
+  deleted?: "active" | "only" | "include";
+  postId?: string;
+  scope?: BidScope;
+  status?: BidStatus;
+};
+
+export function listBids(params?: BidListParams) {
   return unwrapData<BidRecord[]>(apiClient.get("/bids", { params }));
 }
 

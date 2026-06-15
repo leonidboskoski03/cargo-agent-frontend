@@ -2,12 +2,18 @@ import { apiClient, unwrapData } from "@/shared/api/apiClient";
 
 export type SupportedCountry = {
   code: string;
+  displayName?: string | null;
+  lat?: string | null;
+  lng?: string | null;
   name: string;
   nativeName?: string | null;
+  region?: string | null;
 };
 
 export type SupportedCity = {
+  adminCode?: string | null;
   countryCode: string;
+  displayName?: string | null;
   id: string;
   lat?: string | null;
   lng?: string | null;

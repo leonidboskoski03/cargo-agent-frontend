@@ -11,7 +11,9 @@ export type LoginResponse =
   | {
       challengeId: string;
       expiresAt: string;
+      nextResendAt?: string;
       nextAction: { purpose: "LOGIN_MFA"; type: "MFA_REQUIRED" };
+      resendAttemptsRemaining?: number;
       user: AuthUser;
     };
 
@@ -21,14 +23,16 @@ export type RegistrationStartInput = {
   kind: "COMPANY" | "JOB_SEEKER";
   lastName: string;
   password: string;
-  phone?: string;
+  phone: string;
 };
 
 export type RegistrationStartResponse = {
   challengeId: string;
   draftId: string;
   expiresAt: string;
+  nextResendAt?: string;
   nextAction: { purpose: "REGISTER_VERIFY"; type: "VERIFY_OTP" };
+  resendAttemptsRemaining?: number;
 };
 
 export type OtpPurpose = "REGISTER_VERIFY" | "FORGOT_PASSWORD" | "INVITE_ACCEPT" | "CHANGE_PASSWORD" | "LOGIN_MFA";
@@ -39,7 +43,9 @@ export type OtpChallengeResponse = {
   challengeId: string;
   code?: string;
   expiresAt: string;
+  nextResendAt?: string;
   nextAction: { purpose?: OtpPurpose; type: string };
+  resendAttemptsRemaining?: number;
 };
 
 export type RequestOtpInput = {
@@ -54,7 +60,9 @@ export type ForgotPasswordResponse = {
   code?: string;
   expiresAt?: string;
   message: string;
+  nextResendAt?: string;
   nextAction: { purpose: "FORGOT_PASSWORD"; type: "VERIFY_OTP" };
+  resendAttemptsRemaining?: number;
 };
 
 export type RegisterInput = {
@@ -67,7 +75,7 @@ export type RegisterInput = {
 };
 
 export type CompleteCompanyRegistrationInput = {
-  address: string;
+  address?: string;
   city: string;
   companyEmail?: string;
   companyName: string;
@@ -83,8 +91,8 @@ export type CompleteCompanyRegistrationInput = {
 
 export type CompleteJobSeekerRegistrationInput = {
   availability?: string;
-  city: string;
-  countryCode: string;
+  city?: string;
+  countryCode?: string;
   draftId: string;
   headline?: string;
   preferredRoutes?: string[];
@@ -105,6 +113,10 @@ export function forgotPassword(input: { email: string }) {
 
 export function resetPassword(input: { newPassword: string; otpChallengeId: string }) {
   return unwrapData<{ message: string }>(apiClient.post("/auth/reset-password", input));
+}
+
+export function changePassword(input: { currentPassword: string; newPassword: string }) {
+  return unwrapData<{ message: string }>(apiClient.post("/auth/change-password", input));
 }
 
 export function register(input: RegisterInput) {

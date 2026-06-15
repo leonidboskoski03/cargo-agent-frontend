@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClipboardCheck, RotateCcw, Save, Trash2 } from "lucide-react";
+import { ClipboardCheck, Pencil, RotateCcw, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { listUsers } from "@/shared/api/modules/users";
@@ -10,6 +10,7 @@ import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
 import { Field, Input, Select } from "@/shared/components/ui/Form";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
+import { Tooltip } from "@/shared/components/ui/Tooltip";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { useAuthStore } from "@/features/auth/authStore";
 import { formatDateTime, formatUser, formatVehicle } from "./fleetFormatters";
@@ -54,9 +55,13 @@ export function FleetAssignmentsPage() {
   const canManage = canManageFleet(user?.role);
   const [editing, setEditing] = useState<VehicleAssignmentRecord | null>(null);
   const [deleted, setDeleted] = useState<VehicleAssignmentRecord | null>(null);
+  const [registryView, setRegistryView] = useState<"active" | "deleted">("active");
   const usersQuery = useQuery({ queryFn: () => listUsers({ includeInactive: false }), queryKey: ["users", "active"] });
-  const vehiclesQuery = useQuery({ queryFn: listVehicles, queryKey: ["vehicles"] });
-  const assignmentsQuery = useQuery({ queryFn: listVehicleAssignments, queryKey: ["vehicle-assignments"] });
+  const vehiclesQuery = useQuery({ queryFn: () => listVehicles(), queryKey: ["vehicles"] });
+  const assignmentsQuery = useQuery({
+    queryFn: () => listVehicleAssignments({ deleted: registryView === "deleted" ? "only" : "active" }),
+    queryKey: ["vehicle-assignments", registryView],
+  });
   const drivers = useMemo(() => (usersQuery.data ?? []).filter((item) => item.role === "COMPANY_DRIVER"), [usersQuery.data]);
   const vehicles = vehiclesQuery.data ?? [];
   const form = useForm<AssignmentFormInput, unknown, AssignmentFormValues>({
@@ -80,6 +85,7 @@ export function FleetAssignmentsPage() {
   if (error) return <ErrorState description="Assignment data could not be loaded." error={error} title="Unable to load assignments" />;
 
   const assignments = assignmentsQuery.data ?? [];
+  const isDeletedView = registryView === "deleted";
 
   return (
     <div className="space-y-6">
@@ -141,11 +147,42 @@ export function FleetAssignmentsPage() {
         )}
 
         <Surface>
-          <h2 className="text-2xl font-semibold tracking-[-0.28px]">Assignment schedule</h2>
-          <p className="mt-1 text-sm leading-6 text-muted">Active, non-deleted assignment records returned by the backend.</p>
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-[-0.28px]">Assignment schedule</h2>
+              <p className="mt-1 text-sm leading-6 text-muted">
+                {isDeletedView ? "Restore deleted assignment windows from this dedicated view." : "Showing active, non-deleted assignment records returned by the backend."}
+              </p>
+            </div>
+            {canManage ? (
+              <div className="inline-flex w-fit rounded-lg border border-border bg-surface-pearl p-1" aria-label="Fleet assignment registry view">
+                <Button
+                  aria-pressed={!isDeletedView}
+                  className="min-h-8 px-3 py-1 text-sm"
+                  onClick={() => setRegistryView("active")}
+                  type="button"
+                  variant={!isDeletedView ? "secondary" : "ghost"}
+                >
+                  Active
+                </Button>
+                <Button
+                  aria-pressed={isDeletedView}
+                  className="min-h-8 px-3 py-1 text-sm"
+                  onClick={() => setRegistryView("deleted")}
+                  type="button"
+                  variant={isDeletedView ? "secondary" : "ghost"}
+                >
+                  Deleted
+                </Button>
+              </div>
+            ) : null}
+          </div>
           <div className="mt-5">
             {assignments.length === 0 ? (
-              <EmptyState description="Assignments will appear after a vehicle is connected to a driver." title="No assignments yet" />
+              <EmptyState
+                description={isDeletedView ? "Deleted assignments will appear here after admins remove them from the active schedule." : "Assignments will appear after a vehicle is connected to a driver."}
+                title={isDeletedView ? "No deleted assignments" : "No assignments yet"}
+              />
             ) : (
               <Table>
                 <thead><tr><Th>Vehicle</Th><Th>Driver</Th><Th>Window</Th><Th>Status</Th><Th>Actions</Th></tr></thead>
@@ -159,12 +196,40 @@ export function FleetAssignmentsPage() {
                         <Td>{vehicle ? formatVehicle(vehicle) : assignment.vehicleId}</Td>
                         <Td>{driver ? formatUser(driver) : assignment.driverUserId}</Td>
                         <Td>{formatDateTime(assignment.startsAt)} to {formatDateTime(assignment.endsAt)}</Td>
-                        <Td><StatusBadge tone={active ? "success" : "neutral"}>{active ? "ACTIVE" : "ENDED"}</StatusBadge></Td>
+                        <Td><StatusBadge tone={isDeletedView ? "danger" : active ? "success" : "neutral"}>{isDeletedView ? "DELETED" : active ? "ACTIVE" : "ENDED"}</StatusBadge></Td>
                         <Td>
                           {canManage ? (
                             <div className="flex flex-wrap gap-2">
-                              <Button className="h-9 min-h-9 px-4" onClick={() => setEditing(assignment)} type="button" variant="secondary">Edit</Button>
-                              <Button className="h-9 min-h-9 px-4" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(assignment.id)} type="button" variant="danger"><Trash2 aria-hidden="true" className="size-4" />Delete</Button>
+                              {isDeletedView ? (
+                                <Tooltip label="Restore assignment">
+                                  <Button
+                                    aria-label={`Restore assignment ${assignment.id.slice(0, 8)}`}
+                                    className="h-9 min-h-9 px-3"
+                                    disabled={restoreMutation.isPending}
+                                    onClick={() => restoreMutation.mutate(assignment.id)}
+                                    type="button"
+                                    variant="secondary"
+                                  >
+                                    <RotateCcw aria-hidden="true" className="size-4" />
+                                    Restore
+                                  </Button>
+                                </Tooltip>
+                              ) : (
+                                <>
+                                  <Tooltip label="Edit assignment">
+                                    <Button aria-label={`Edit assignment ${assignment.id.slice(0, 8)}`} className="h-9 min-h-9 px-3" onClick={() => setEditing(assignment)} type="button" variant="secondary">
+                                      <Pencil aria-hidden="true" className="size-4" />
+                                      Edit
+                                    </Button>
+                                  </Tooltip>
+                                  <Tooltip label="Delete assignment">
+                                    <Button aria-label={`Delete assignment ${assignment.id.slice(0, 8)}`} className="h-9 min-h-9 px-3" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(assignment.id)} type="button" variant="danger">
+                                      <Trash2 aria-hidden="true" className="size-4" />
+                                      Delete
+                                    </Button>
+                                  </Tooltip>
+                                </>
+                              )}
                             </div>
                           ) : <span className="text-sm text-muted">Read only</span>}
                         </Td>

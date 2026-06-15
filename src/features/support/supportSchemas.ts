@@ -22,7 +22,13 @@ export const documentCreateSchema = z.object({
   url: z.string().trim().url("Use a valid document URL."),
 });
 
+export const documentUploadFormSchema = z.object({
+  kind: z.enum(["COMPANY_LICENSE", "VEHICLE_REGISTRATION", "INSURANCE", "CONTRACT_ATTACHMENT", "OTHER"]),
+  name: z.string().trim().min(1, "Document name is required.").max(200),
+});
+
 export const documentFilterSchema = z.object({
+  deleted: z.enum(["active", "only", "include"]).optional(),
   kind: z.enum(["COMPANY_LICENSE", "VEHICLE_REGISTRATION", "INSURANCE", "CONTRACT_ATTACHMENT", "OTHER"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
@@ -38,4 +44,5 @@ export const auditFilterSchema = z.object({
 export type AuditFilterValues = z.output<typeof auditFilterSchema>;
 export type DocumentCreateValues = z.output<typeof documentCreateSchema>;
 export type DocumentFilterValues = z.output<typeof documentFilterSchema>;
+export type DocumentUploadFormValues = z.output<typeof documentUploadFormSchema>;
 export type NotificationFilterValues = z.output<typeof notificationFilterSchema>;

@@ -27,9 +27,9 @@ function Metric({ icon: Icon, label, value }: { icon: typeof Truck; label: strin
 
 export function FleetPage() {
   const user = useAuthStore((state) => state.user);
-  const vehiclesQuery = useQuery({ queryFn: listVehicles, queryKey: ["vehicles"] });
+  const vehiclesQuery = useQuery({ queryFn: () => listVehicles(), queryKey: ["vehicles"] });
   const licensesQuery = useQuery({ queryFn: () => listLicenses(), queryKey: ["licenses", "ALL"] });
-  const assignmentsQuery = useQuery({ queryFn: listVehicleAssignments, queryKey: ["vehicle-assignments"] });
+  const assignmentsQuery = useQuery({ queryFn: () => listVehicleAssignments(), queryKey: ["vehicle-assignments"] });
 
   if (!canViewFleet(user?.role)) {
     return (

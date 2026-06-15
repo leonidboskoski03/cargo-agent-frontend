@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "@/features/auth/authStore";
@@ -45,10 +46,10 @@ const driverUser = {
   role: "COMPANY_DRIVER" as const,
 };
 
-function renderReviewsPage() {
+function renderReviewsPage(initialPath = "/reviews") {
   return render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialPath]}>
         <ReviewsPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -86,6 +87,16 @@ describe("ReviewsPage", () => {
     expect(contractsApi.listContracts).toHaveBeenCalledWith({ status: "COMPLETED" });
   });
 
+  it("preselects a completed contract from the contract detail review link", async () => {
+    useAuthStore.setState({ status: "authenticated", user: adminUser });
+
+    renderReviewsPage("/reviews?contractId=contract_123");
+
+    expect(await screen.findByRole("button", { name: /create review/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/contract id/i)).toHaveValue("contract_123");
+    expect(reviewsApi.listReviews).toHaveBeenCalledWith({ contractId: "contract_123", deleted: "active" });
+  });
+
   it("keeps drivers in read-only review mode", async () => {
     useAuthStore.setState({ status: "authenticated", user: driverUser });
 
@@ -93,5 +104,47 @@ describe("ReviewsPage", () => {
 
     expect(await screen.findByText(/read-only reviews/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /create review/i })).not.toBeInTheDocument();
+  });
+
+  it("shows deleted reviews in a dedicated view and restores authored reviews", async () => {
+    useAuthStore.setState({ status: "authenticated", user: adminUser });
+    reviewsApi.listReviews.mockImplementation((params?: { deleted?: string }) => Promise.resolve(
+      params?.deleted === "only"
+        ? [{
+          comment: "Recovered review",
+          contract: {
+            carrierCompanyId: "company_carrier",
+            deletedAt: null,
+            id: "contract_123",
+            shipperCompanyId: "company_123",
+            status: "COMPLETED",
+          },
+          contractId: "contract_123",
+          createdAt: "2026-06-12T00:00:00.000Z",
+          deletedAt: "2026-06-13T00:00:00.000Z",
+          id: "review_deleted",
+          rating: 5,
+          reviewerCompanyId: "company_123",
+          reviewerUserId: "user_123",
+          status: "PUBLISHED",
+          targetCompanyId: "company_carrier",
+          updatedAt: "2026-06-12T00:00:00.000Z",
+        }]
+        : [],
+    ));
+    reviewsApi.restoreReview.mockResolvedValue({});
+
+    renderReviewsPage();
+
+    expect(await screen.findByText("No reviews")).toBeInTheDocument();
+    expect(reviewsApi.listReviews).toHaveBeenCalledWith({ deleted: "active" });
+
+    await userEvent.click(screen.getByRole("button", { name: /^deleted$/i }));
+
+    expect(await screen.findByText("Recovered review")).toBeInTheDocument();
+    expect(reviewsApi.listReviews).toHaveBeenCalledWith({ deleted: "only" });
+    await userEvent.click(screen.getByRole("button", { name: /restore/i }));
+
+    expect(reviewsApi.restoreReview).toHaveBeenCalledWith("review_deleted", expect.anything());
   });
 });

@@ -43,8 +43,12 @@ export type VehicleInput = {
   year?: number;
 };
 
-export function listVehicles() {
-  return unwrapData<VehicleRecord[]>(apiClient.get("/vehicles"));
+export type VehicleListParams = {
+  deleted?: "active" | "only" | "include";
+};
+
+export function listVehicles(params?: VehicleListParams) {
+  return unwrapData<VehicleRecord[]>(apiClient.get("/vehicles", { params }));
 }
 
 export function getVehicle(vehicleId: string) {

@@ -26,6 +26,7 @@ export type ReviewRecord = {
 
 export type ReviewsQuery = {
   contractId?: string;
+  deleted?: "active" | "only" | "include";
   status?: ReviewStatus;
 };
 

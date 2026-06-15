@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Clock3, ExternalLink, Filter, MessageSquareText, PanelRightOpen, Pencil, Rocket, Search, Trash2, Undo2, X } from "lucide-react";
+import { Check, Clock3, ExternalLink, Filter, MessageSquareText, PanelRightOpen, Pencil, Rocket, RotateCcw, Search, Trash2, Undo2, X } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -111,6 +111,7 @@ export function BidsPage() {
   const [boostBidTarget, setBoostBidTarget] = useState<BidRecord | null>(null);
   const [boostCredits, setBoostCredits] = useState("1");
   const [selectedBid, setSelectedBid] = useState<BidRecord | null>(null);
+  const [registryView, setRegistryView] = useState<"active" | "deleted">("active");
 
   const scope = (searchParams.get("scope") as BidScope | null) ?? "received";
   const safeScope = scopes.some((item) => item.value === scope) ? scope : "received";
@@ -119,8 +120,8 @@ export function BidsPage() {
   const postId = searchParams.get("postId") ?? undefined;
 
   const bidsQuery = useQuery({
-    queryFn: () => listBids({ postId, scope: safeScope, status }),
-    queryKey: ["bids", "workspace", safeScope, status ?? "ALL", postId ?? "all"],
+    queryFn: () => listBids({ deleted: registryView === "deleted" ? "only" : "active", postId, scope: safeScope, status }),
+    queryKey: ["bids", "workspace", safeScope, status ?? "ALL", postId ?? "all", registryView],
   });
   const activitiesQuery = useQuery({
     enabled: Boolean(selectedBid),
@@ -131,6 +132,7 @@ export function BidsPage() {
     () => (bidsQuery.data ?? []).filter((bid) => bidMatchesSearch(bid, search, user?.companyId)),
     [bidsQuery.data, search, user?.companyId],
   );
+  const isDeletedView = registryView === "deleted";
 
   function setParam(key: string, value?: string) {
     const next = new URLSearchParams(searchParams);
@@ -226,17 +228,43 @@ export function BidsPage() {
 
       <Surface>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="flex rounded-xl border border-border bg-surface-pearl p-2 sm:w-auto">
-            {scopes.map((item) => (
-              <button
-                className={`flex justify-center items-center  min-h-7 min-w-20 rounded-md px-3 text-xs font-normal transition  ${safeScope === item.value ? "bg-primary text-primary-foreground shadow-sm" : "text-muted hover:bg-card hover:text-foreground"}`}
-                key={item.value}
-                onClick={() => setParam("scope", item.value)}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex rounded-xl border border-border bg-surface-pearl p-2 sm:w-auto">
+              {scopes.map((item) => (
+                <button
+                  className={`flex justify-center items-center  min-h-7 min-w-20 rounded-md px-3 text-xs font-normal transition  ${safeScope === item.value ? "bg-primary text-primary-foreground shadow-sm" : "text-muted hover:bg-card hover:text-foreground"}`}
+                  key={item.value}
+                  onClick={() => setParam("scope", item.value)}
+                  type="button"
+                >
+                  <span className={"text-xs h-fit"}>{item.label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="inline-flex w-fit rounded-lg border border-border bg-surface-pearl p-1" aria-label="Bid registry view">
+              <Button
+                aria-pressed={!isDeletedView}
+                className="min-h-8 px-3 py-1 text-sm"
+                onClick={() => setRegistryView("active")}
                 type="button"
+                variant={!isDeletedView ? "secondary" : "ghost"}
               >
-                <span className={"text-xs h-fit"}>{item.label}</span>
-              </button>
-            ))}
+                Active
+              </Button>
+              <Button
+                aria-pressed={isDeletedView}
+                className="min-h-8 px-3 py-1 text-sm"
+                onClick={() => {
+                  setSelectedBid(null);
+                  setEditingBidId(null);
+                  setRegistryView("deleted");
+                }}
+                type="button"
+                variant={isDeletedView ? "secondary" : "ghost"}
+              >
+                Deleted
+              </Button>
+            </div>
           </div>
           <div className="grid gap-3 md:grid-cols-[180px_minmax(240px,360px)]">
             <Field label="Status">
@@ -262,7 +290,10 @@ export function BidsPage() {
       </Surface>
 
       {bids.length === 0 ? (
-        <EmptyState description="No bids match this queue and filter set." title="No bids found" />
+        <EmptyState
+          description={isDeletedView ? "Deleted bids will appear here when they match this queue and filter set." : "No bids match this queue and filter set."}
+          title={isDeletedView ? "No deleted bids found" : "No bids found"}
+        />
       ) : (
         <Table>
           <thead>
@@ -276,7 +307,8 @@ export function BidsPage() {
           </thead>
           <tbody>
             {bids.map((bid) => {
-              const { canBoost, canDecide, canManageOwn, ownsPost } = canUseBidActions(bid, user?.companyId, user?.role);
+              const { canBoost, canDecide, canManageOwn, ownsBid, ownsPost } = canUseBidActions(bid, user?.companyId, user?.role);
+              const canRestoreDeleted = user?.role === "COMPANY_ADMIN" && ownsBid;
 
               return (
                 <Fragment key={bid.id}>
@@ -298,46 +330,58 @@ export function BidsPage() {
                       <p className="mt-1 text-xs text-muted">Pickup {formatDateTime(bid.estimatedPickupAt)}</p>
                       <p className="mt-1 text-xs text-muted">Delivery {formatDateTime(bid.estimatedDeliveryAt)}</p>
                     </Td>
-                    <Td><StatusBadge tone={bidTone(bid.status)}>{humanizeEnum(bid.status)}</StatusBadge></Td>
+                    <Td><StatusBadge tone={isDeletedView ? "danger" : bidTone(bid.status)}>{isDeletedView ? "Deleted" : humanizeEnum(bid.status)}</StatusBadge></Td>
                     <Td>
                       <div className="flex flex-wrap gap-2">
                         <Button className="h-9 min-h-9 px-3" onClick={() => setSelectedBid(bid)} type="button" variant="secondary">
                           <PanelRightOpen className="size-4" /> Details
                         </Button>
-                        {canDecide ? (
+                        {isDeletedView ? (
+                          canRestoreDeleted ? (
+                            <Button className="h-9 min-h-9 px-3" disabled={restoreMutation.isPending} onClick={() => restoreMutation.mutate(bid.id)} type="button" variant="secondary">
+                              <RotateCcw className="size-4" /> Restore
+                            </Button>
+                          ) : (
+                            <span className="text-sm text-muted">Deleted by carrier</span>
+                          )
+                        ) : (
                           <>
-                            <Button className="h-9 min-h-9 px-3" onClick={() => setPendingAction({ bid, status: "ACCEPTED" })} type="button">
-                              <Check className="size-4" /> Accept
-                            </Button>
-                            <Button className="h-9 min-h-9 px-3" onClick={() => setPendingAction({ bid, status: "REJECTED" })} type="button" variant="secondary">
-                              <X className="size-4" /> Reject
-                            </Button>
-                          </>
-                        ) : null}
-                        {canManageOwn ? (
-                          <>
-                            <Button className="h-9 min-h-9 px-3" onClick={() => { setEditingBidId(bid.id); setEditValues(emptyEditValues(bid)); }} type="button" variant="secondary">
-                              <Pencil className="size-4" /> Edit
-                            </Button>
-                            <Button className="h-9 min-h-9 px-3" onClick={() => setPendingAction({ bid, status: "WITHDRAWN" })} type="button" variant="secondary">
-                              <Undo2 className="size-4" /> Withdraw
-                            </Button>
-                            {canBoost ? (
-                              <Button className="h-9 min-h-9 px-3" onClick={() => setBoostBidTarget(bid)} type="button" variant="secondary">
-                                <Rocket className="size-4" /> Boost
-                              </Button>
+                            {canDecide ? (
+                              <>
+                                <Button className="h-9 min-h-9 px-3" onClick={() => setPendingAction({ bid, status: "ACCEPTED" })} type="button">
+                                  <Check className="size-4" /> Accept
+                                </Button>
+                                <Button className="h-9 min-h-9 px-3" onClick={() => setPendingAction({ bid, status: "REJECTED" })} type="button" variant="secondary">
+                                  <X className="size-4" /> Reject
+                                </Button>
+                              </>
                             ) : null}
-                            <Button className="h-9 min-h-9 px-3" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(bid.id)} type="button" variant="danger">
-                              <Trash2 className="size-4" /> Delete
-                            </Button>
+                            {canManageOwn ? (
+                              <>
+                                <Button className="h-9 min-h-9 px-3" onClick={() => { setEditingBidId(bid.id); setEditValues(emptyEditValues(bid)); }} type="button" variant="secondary">
+                                  <Pencil className="size-4" /> Edit
+                                </Button>
+                                <Button className="h-9 min-h-9 px-3" onClick={() => setPendingAction({ bid, status: "WITHDRAWN" })} type="button" variant="secondary">
+                                  <Undo2 className="size-4" /> Withdraw
+                                </Button>
+                                {canBoost ? (
+                                  <Button className="h-9 min-h-9 px-3" onClick={() => setBoostBidTarget(bid)} type="button" variant="secondary">
+                                    <Rocket className="size-4" /> Boost
+                                  </Button>
+                                ) : null}
+                                <Button className="h-9 min-h-9 px-3" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(bid.id)} type="button" variant="danger">
+                                  <Trash2 className="size-4" /> Delete
+                                </Button>
+                              </>
+                            ) : null}
                           </>
-                        ) : null}
+                        )}
                         {bid.contract ? (
                           <Link className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-primary bg-card px-3 text-sm font-semibold text-primary" to={`/contracts/${bid.contract.id}`}>
                             <ExternalLink className="size-4" /> Open contract
                           </Link>
                         ) : null}
-                        {!canDecide && !canManageOwn && !bid.contract ? <span className="text-sm text-muted">No action</span> : null}
+                        {!isDeletedView && !canDecide && !canManageOwn && !bid.contract ? <span className="text-sm text-muted">No action</span> : null}
                       </div>
                     </Td>
                   </tr>

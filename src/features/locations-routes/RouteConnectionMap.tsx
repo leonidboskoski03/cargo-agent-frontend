@@ -18,40 +18,29 @@ function locationLabel(location: { city: string; countryCode: string }) {
   return `${location.city}, ${location.countryCode}`;
 }
 
-function lonLatToWorld(point: MapPoint, zoom: number) {
-  const latitude = Math.max(Math.min(point.lat, 85.05112878), -85.05112878);
-  const latRad = latitude * Math.PI / 180;
-  const scale = 2 ** zoom;
-  return {
-    x: (point.lng + 180) / 360 * scale,
-    y: (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * scale,
-  };
-}
+function fittedPoint(point: MapPoint, origin: MapPoint, destination: MapPoint) {
+  const minLat = Math.min(origin.lat, destination.lat);
+  const maxLat = Math.max(origin.lat, destination.lat);
+  const minLng = Math.min(origin.lng, destination.lng);
+  const maxLng = Math.max(origin.lng, destination.lng);
+  const latRange = Math.max(maxLat - minLat, 0.01);
+  const lngRange = Math.max(maxLng - minLng, 0.01);
+  const padding = 14;
 
-function pickZoom(origin: MapPoint, destination: MapPoint) {
-  const delta = Math.max(Math.abs(origin.lat - destination.lat), Math.abs(origin.lng - destination.lng));
-  if (delta > 18) return 4;
-  if (delta > 8) return 5;
-  if (delta > 3) return 6;
-  if (delta > 1.2) return 7;
-  return 8;
-}
-
-function projectedPoint(point: MapPoint, baseTileX: number, baseTileY: number, zoom: number) {
-  const world = lonLatToWorld(point, zoom);
   return {
-    x: (world.x - baseTileX) * 256,
-    y: (world.y - baseTileY) * 256,
+    x: padding + ((point.lng - minLng) / lngRange) * (100 - padding * 2),
+    y: padding + ((maxLat - point.lat) / latRange) * (100 - padding * 2),
   };
 }
 
 export function RouteConnectionMap({ className, route }: { className?: string; route?: RouteRecord | null }) {
   const origin = route ? parsePoint(route.originLocation) : null;
   const destination = route ? parsePoint(route.destinationLocation) : null;
+  const shellClassName = "relative h-[clamp(220px,36vh,420px)] min-h-0 overflow-hidden rounded-lg border border-border bg-surface-pearl shadow-sm";
 
   if (!route) {
     return (
-      <div className={cn("grid min-h-[280px] place-items-center rounded-xl border border-dashed border-border bg-surface-pearl p-6 text-center", className)}>
+      <div className={cn("grid h-[clamp(200px,32vh,360px)] min-h-0 place-items-center rounded-lg border border-dashed border-border bg-surface-pearl p-5 text-center", className)}>
         <div>
           <div className="mx-auto grid size-11 place-items-center rounded-lg bg-card shadow-sm">
             <MapPinned className="size-5 text-primary" />
@@ -65,12 +54,12 @@ export function RouteConnectionMap({ className, route }: { className?: string; r
 
   if (!origin || !destination) {
     return (
-      <div className={cn("relative min-h-[280px] overflow-hidden rounded-xl border border-border bg-surface-pearl p-5", className)}>
+      <div className={cn(shellClassName, "p-5", className)}>
         <div className="absolute inset-x-10 top-1/2 h-px -translate-y-1/2 bg-border" />
         <div className="absolute left-10 right-10 top-1/2 h-1 -translate-y-1/2 rounded-full bg-primary/20">
           <div className="h-full w-full animate-pulse rounded-full bg-primary/45" />
         </div>
-        <div className="relative flex h-full min-h-[240px] items-center justify-between gap-5">
+        <div className="relative flex h-full items-center justify-between gap-5">
           <div className="max-w-[42%] rounded-xl border border-border bg-card p-4 shadow-sm">
             <p className="text-xs font-semibold uppercase text-muted">Origin</p>
             <p className="mt-1 text-lg font-semibold">{locationLabel(route.originLocation)}</p>
@@ -90,60 +79,42 @@ export function RouteConnectionMap({ className, route }: { className?: string; r
     );
   }
 
-  const zoom = pickZoom(origin, destination);
-  const center = { lat: (origin.lat + destination.lat) / 2, lng: (origin.lng + destination.lng) / 2 };
-  const centerWorld = lonLatToWorld(center, zoom);
-  const baseTileX = Math.floor(centerWorld.x) - 1;
-  const baseTileY = Math.floor(centerWorld.y) - 1;
-  const originPixel = projectedPoint(origin, baseTileX, baseTileY, zoom);
-  const destinationPixel = projectedPoint(destination, baseTileX, baseTileY, zoom);
+  const originPixel = fittedPoint(origin, origin, destination);
+  const destinationPixel = fittedPoint(destination, origin, destination);
   const controlX = (originPixel.x + destinationPixel.x) / 2;
-  const controlY = Math.min(originPixel.y, destinationPixel.y) - 52;
-  const tiles = Array.from({ length: 9 }, (_, index) => {
-    const dx = index % 3;
-    const dy = Math.floor(index / 3);
-    const x = baseTileX + dx;
-    const y = baseTileY + dy;
-    return { dx, dy, key: `${x}-${y}-${zoom}`, x, y };
-  });
+  const controlY = Math.max(8, Math.min(originPixel.y, destinationPixel.y) - 14);
 
   return (
-    <div className={cn("relative min-h-[320px] overflow-hidden rounded-xl border border-border bg-surface-pearl shadow-sm", className)}>
-      <div className="absolute left-1/2 top-1/2 h-[768px] w-[768px] -translate-x-1/2 -translate-y-1/2">
-        {tiles.map((tile) => (
-          <img
-            alt=""
-            className="absolute size-64 select-none"
-            draggable={false}
-            key={tile.key}
-            src={`https://tile.openstreetmap.org/${zoom}/${tile.x}/${tile.y}.png`}
-            style={{ left: tile.dx * 256, top: tile.dy * 256 }}
-          />
-        ))}
-        <svg aria-hidden="true" className="absolute inset-0" viewBox="0 0 768 768">
+    <div className={cn(shellClassName, className)}>
+      <div className="absolute inset-0 opacity-80">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(148,163,184,0.22)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.22)_1px,transparent_1px)] bg-[size:42px_42px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(9,105,218,0.10),transparent_30%),radial-gradient(circle_at_80%_60%,rgba(16,185,129,0.08),transparent_26%)]" />
+      </div>
+      <div className="absolute inset-x-4 bottom-8 top-16">
+        <svg aria-hidden="true" className="size-full" preserveAspectRatio="none" viewBox="0 0 100 100">
           <path
             d={`M ${originPixel.x} ${originPixel.y} Q ${controlX} ${controlY} ${destinationPixel.x} ${destinationPixel.y}`}
             fill="none"
             stroke="rgba(9, 105, 218, 0.22)"
             strokeLinecap="round"
-            strokeWidth="18"
+            strokeWidth="5"
           />
           <path
             d={`M ${originPixel.x} ${originPixel.y} Q ${controlX} ${controlY} ${destinationPixel.x} ${destinationPixel.y}`}
             fill="none"
             stroke="#0969da"
-            strokeDasharray="14 12"
+            strokeDasharray="3 2.5"
             strokeLinecap="round"
-            strokeWidth="5"
+            strokeWidth="1.6"
           >
             <animate attributeName="stroke-dashoffset" dur="1.2s" from="26" repeatCount="indefinite" to="0" />
           </path>
-          <circle cx={originPixel.x} cy={originPixel.y} fill="#ffffff" r="14" stroke="#0969da" strokeWidth="5" />
-          <circle cx={destinationPixel.x} cy={destinationPixel.y} fill="#0969da" r="14" stroke="#ffffff" strokeWidth="5" />
+          <circle cx={originPixel.x} cy={originPixel.y} fill="#ffffff" r="3.2" stroke="#0969da" strokeWidth="1.2" />
+          <circle cx={destinationPixel.x} cy={destinationPixel.y} fill="#0969da" r="3.2" stroke="#ffffff" strokeWidth="1.2" />
         </svg>
       </div>
 
-      <div className="absolute inset-x-4 top-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card/95 px-4 py-3 shadow-sm backdrop-blur">
+      <div className="absolute inset-x-4 top-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card/95 px-3 py-2.5 shadow-sm backdrop-blur">
         <div>
           <p className="text-xs font-semibold uppercase text-muted">Selected lane</p>
           <h3 className="mt-1 text-base font-semibold">{locationLabel(route.originLocation)} to {locationLabel(route.destinationLocation)}</h3>
@@ -155,7 +126,7 @@ export function RouteConnectionMap({ className, route }: { className?: string; r
       </div>
 
       <div className="absolute bottom-3 right-3 rounded-md bg-card/90 px-2 py-1 text-[11px] font-medium text-muted shadow-sm">
-        Map data OpenStreetMap
+        Fitted coordinate preview, not live road geometry
       </div>
     </div>
   );

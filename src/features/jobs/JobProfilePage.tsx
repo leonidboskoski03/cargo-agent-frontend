@@ -500,9 +500,9 @@ export function JobProfilePage() {
   const completionQuery = useQuery({ enabled: authUser?.role === "JOB_SEEKER", queryFn: getMyProfileCompletion, queryKey: ["users", "me", "profile-completion"] });
   const walletQuery = useQuery({ enabled: authUser?.role === "JOB_SEEKER", queryFn: getJobSeekerWallet, queryKey: ["job-seeker-billing", "wallet"] });
   const licensesQuery = useQuery({ enabled: Boolean(authUser?.id) && authUser?.role === "JOB_SEEKER", queryFn: () => listLicenses({ userId: authUser?.id }), queryKey: ["licenses", "me", authUser?.id] });
-  const jobsQuery = useQuery({ enabled: authUser?.role === "JOB_SEEKER", queryFn: listMyJobApplications, queryKey: ["job-applications", "mine"] });
+  const jobsQuery = useQuery({ enabled: authUser?.role === "JOB_SEEKER", queryFn: () => listMyJobApplications(), queryKey: ["job-applications", "mine"] });
   const vehicleListingsQuery = useQuery({ enabled: authUser?.role === "JOB_SEEKER", queryFn: () => listMyVehicleMarketplaceListings({ includeDeleted: true }), queryKey: ["vehicle-marketplace", "mine", "job-profile"] });
-  const ownedVehiclesQuery = useQuery({ enabled: authUser?.role === "JOB_SEEKER", queryFn: listVehicles, queryKey: ["vehicles", "me", authUser?.id] });
+  const ownedVehiclesQuery = useQuery({ enabled: authUser?.role === "JOB_SEEKER", queryFn: () => listVehicles(), queryKey: ["vehicles", "me", authUser?.id] });
 
   const error = profileQuery.error ?? completionQuery.error ?? walletQuery.error ?? licensesQuery.error ?? jobsQuery.error ?? vehicleListingsQuery.error ?? ownedVehiclesQuery.error;
   const isLoading = profileQuery.isLoading || completionQuery.isLoading || walletQuery.isLoading || licensesQuery.isLoading || jobsQuery.isLoading || vehicleListingsQuery.isLoading || ownedVehiclesQuery.isLoading;

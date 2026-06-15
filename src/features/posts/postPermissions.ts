@@ -9,7 +9,7 @@ export function canManageCompanyPosts(role: UserRole) {
 }
 
 export function canEditCompanyPost(input: { ownsPost: boolean; role: UserRole; status: PostStatus }) {
-  return canManageCompanyPosts(input.role) && input.ownsPost && input.status === "OPEN";
+  return canManageCompanyPosts(input.role) && input.ownsPost && ["DRAFT", "OPEN", "ARCHIVED"].includes(input.status);
 }
 
 export function canDecideBid(input: { ownsPost: boolean; role: UserRole; status: BidStatus }) {

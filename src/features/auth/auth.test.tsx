@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
@@ -7,12 +7,16 @@ import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import { useAuthStore } from "@/features/auth/authStore";
 import { InviteAcceptPage } from "@/features/invites/InviteAcceptPage";
 import { RegistrationStartPage } from "@/features/registration/RegistrationStartPage";
+import { ChangePasswordPage } from "./ChangePasswordPage";
 import { ForgotPasswordPage } from "./ForgotPasswordPage";
 import { LoginPage } from "./LoginPage";
 import { inviteAcceptSchema, loginSchema, registrationStartSchema } from "./authSchemas";
 
 const authApi = vi.hoisted(() => ({
+  changePassword: vi.fn(),
   forgotPassword: vi.fn(),
+  completeCompanyRegistration: vi.fn(),
+  completeJobSeekerRegistration: vi.fn(),
   login: vi.fn(),
   loginVerifyOtp: vi.fn(),
   logout: vi.fn(),
@@ -21,11 +25,18 @@ const authApi = vi.hoisted(() => ({
   resetPassword: vi.fn(),
   requestOtp: vi.fn(),
   resendOtp: vi.fn(),
+  startCompanyRegistration: vi.fn(),
   verifyOtp: vi.fn(),
+  verifyRegistrationOtp: vi.fn(),
 }));
 
 const inviteApi = vi.hoisted(() => ({
   acceptCompanyInvite: vi.fn(),
+  previewCompanyInvite: vi.fn(),
+}));
+
+const geoApi = vi.hoisted(() => ({
+  listSupportedCountries: vi.fn(),
 }));
 
 const usersApi = vi.hoisted(() => ({
@@ -34,6 +45,9 @@ const usersApi = vi.hoisted(() => ({
 
 vi.mock("@/shared/api/modules/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/shared/api/modules/auth")>()),
+  completeCompanyRegistration: authApi.completeCompanyRegistration,
+  completeJobSeekerRegistration: authApi.completeJobSeekerRegistration,
+  changePassword: authApi.changePassword,
   forgotPassword: authApi.forgotPassword,
   login: authApi.login,
   loginVerifyOtp: authApi.loginVerifyOtp,
@@ -43,12 +57,20 @@ vi.mock("@/shared/api/modules/auth", async (importOriginal) => ({
   resetPassword: authApi.resetPassword,
   requestOtp: authApi.requestOtp,
   resendOtp: authApi.resendOtp,
+  startCompanyRegistration: authApi.startCompanyRegistration,
   verifyOtp: authApi.verifyOtp,
+  verifyRegistrationOtp: authApi.verifyRegistrationOtp,
 }));
 
 vi.mock("@/shared/api/modules/companyInvites", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/shared/api/modules/companyInvites")>()),
   acceptCompanyInvite: inviteApi.acceptCompanyInvite,
+  previewCompanyInvite: inviteApi.previewCompanyInvite,
+}));
+
+vi.mock("@/shared/api/modules/geo", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/shared/api/modules/geo")>()),
+  listSupportedCountries: geoApi.listSupportedCountries,
 }));
 
 vi.mock("@/shared/api/modules/users", async (importOriginal) => ({
@@ -90,6 +112,15 @@ describe("auth validation", () => {
         lastName: "Admin",
         password: "password1",
         phone: "",
+      }).success,
+    ).toBe(false);
+    expect(
+      registrationStartSchema.safeParse({
+        email: "admin@cargo.test",
+        firstName: "Ada",
+        lastName: "Admin",
+        password: "password1",
+        phone: "+389 70 123 456",
       }).success,
     ).toBe(true);
   });
@@ -208,6 +239,7 @@ describe("protected route", () => {
   it("keeps MVP direct routes protected", () => {
     const protectedPaths = [
       "/dashboard",
+      "/account/password",
       "/locations",
       "/routes",
       "/posts",
@@ -246,7 +278,44 @@ describe("protected route", () => {
   });
 });
 
+describe("change password", () => {
+  beforeEach(() => {
+    authApi.changePassword.mockResolvedValue({ message: "Password changed" });
+  });
+
+  it("changes the signed-in password from a protected account viewport", async () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <ChangePasswordPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await userEvent.type(screen.getByLabelText(/current password/i), "password1");
+    await userEvent.type(screen.getByLabelText(/^new password/i), "NewPass123!");
+    await userEvent.type(screen.getByLabelText(/confirm password/i), "NewPass123!");
+    await userEvent.click(screen.getByRole("button", { name: /change password/i }));
+
+    await waitFor(() => {
+      expect(authApi.changePassword).toHaveBeenCalledWith({
+        currentPassword: "password1",
+        newPassword: "NewPass123!",
+      });
+    });
+    expect(await screen.findByRole("heading", { name: /password updated/i })).toBeInTheDocument();
+  });
+});
+
 describe("registration wizard", () => {
+  beforeEach(() => {
+    geoApi.listSupportedCountries.mockResolvedValue([
+      { code: "MK", name: "North Macedonia" },
+      { code: "RS", name: "Serbia" },
+      { code: "BG", name: "Bulgaria" },
+    ]);
+  });
+
   it("shows useful login placeholders", () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
@@ -258,6 +327,56 @@ describe("registration wizard", () => {
 
     expect(screen.getByPlaceholderText("you@company.com")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Enter your password")).toBeInTheDocument();
+  });
+
+  it("auto-verifies login MFA after six OTP digits", async () => {
+    authApi.login.mockResolvedValue({
+      challengeId: "challenge_login",
+      expiresAt: new Date().toISOString(),
+      nextResendAt: new Date(Date.now() - 1_000).toISOString(),
+      nextAction: { purpose: "LOGIN_MFA", type: "MFA_REQUIRED" },
+      resendAttemptsRemaining: 3,
+      user: adminUser,
+    });
+    authApi.verifyOtp.mockResolvedValue({
+      challengeId: "challenge_login",
+      channel: "EMAIL",
+      nextAction: { type: "VERIFIED" },
+      purpose: "LOGIN_MFA",
+    });
+    authApi.loginVerifyOtp.mockResolvedValue({ user: adminUser });
+    usersApi.getMe.mockResolvedValue(adminUser);
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={["/login"]}>
+          <Routes>
+            <Route element={<LoginPage />} path="/login" />
+            <Route element={<div>Dashboard reached</div>} path="/dashboard" />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await userEvent.type(screen.getByPlaceholderText("you@company.com"), "admin@cargo.test");
+    await userEvent.type(screen.getByPlaceholderText("Enter your password"), "password1");
+    await userEvent.click(screen.getByRole("button", { name: /auth\.login\.submit/i }));
+
+    expect(await screen.findByRole("heading", { name: "Verify your login" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /create an account/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /forgot your password/i })).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("OTP code"), "123456");
+
+    await waitFor(() => {
+      expect(authApi.verifyOtp).toHaveBeenCalledWith({ challengeId: "challenge_login", code: "123456" });
+    });
+    expect(authApi.loginVerifyOtp).toHaveBeenCalledWith({
+      email: "admin@cargo.test",
+      otpChallengeId: "challenge_login",
+      password: "password1",
+    });
+    expect(await screen.findByText("Dashboard reached")).toBeInTheDocument();
   });
 
   it("resets password with email OTP and confirmation password", async () => {
@@ -305,8 +424,73 @@ describe("registration wizard", () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByRole("heading", { name: "Admin account" })).toBeInTheDocument();
-    expect(screen.getByText("Verification")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Company admin account" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("ada@carrier.com")).toBeInTheDocument();
+    expect(screen.getAllByText("Verification").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /phone.*\+389/i })).toBeInTheDocument();
+  });
+
+  it("auto-verifies registration after six OTP digits", async () => {
+    authApi.startCompanyRegistration.mockResolvedValue({
+      challengeId: "challenge_register",
+      draftId: "draft_123",
+      expiresAt: new Date().toISOString(),
+      nextResendAt: new Date(Date.now() - 1_000).toISOString(),
+      nextAction: { purpose: "REGISTER_VERIFY", type: "VERIFY_OTP" },
+      resendAttemptsRemaining: 3,
+    });
+    authApi.resendOtp.mockResolvedValue({
+      accepted: true,
+      challengeId: "challenge_register",
+      expiresAt: new Date().toISOString(),
+      nextAction: { purpose: "REGISTER_VERIFY", type: "ENTER_OTP" },
+      resendAttemptsRemaining: 2,
+    });
+    authApi.verifyRegistrationOtp.mockResolvedValue({
+      draftId: "draft_123",
+      kind: "COMPANY",
+      nextAction: { type: "COMPLETE_COMPANY_PROFILE" },
+      otpVerified: true,
+    });
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <RegistrationStartPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await userEvent.type(screen.getByLabelText(/first name/i), "Ada");
+    await userEvent.type(screen.getByLabelText(/last name/i), "Admin");
+    await userEvent.type(screen.getByLabelText(/^email/i), "admin@cargo.test");
+    await userEvent.type(screen.getByLabelText(/^password/i), "password1");
+    await userEvent.click(screen.getByRole("button", { name: /phone.*\+389/i }));
+    await userEvent.type(screen.getByPlaceholderText("Search country"), "Serbia");
+    await userEvent.click(screen.getByRole("button", { name: /^serbiars$/i }));
+    await userEvent.type(screen.getByPlaceholderText("70 123 456"), "60 123 456");
+    await userEvent.click(screen.getByRole("button", { name: /send verification/i }));
+
+    expect(authApi.startCompanyRegistration).toHaveBeenCalledWith({
+      email: "admin@cargo.test",
+      firstName: "Ada",
+      kind: "COMPANY",
+      lastName: "Admin",
+      password: "password1",
+      phone: "+381 60 123 456",
+    });
+    expect(await screen.findByRole("heading", { name: "Verify delivery code" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /resend code/i }));
+
+    expect(authApi.resendOtp).toHaveBeenCalledWith({ challengeId: "challenge_register" });
+
+    await userEvent.type(screen.getByLabelText("OTP code"), "654321");
+
+    await waitFor(() => {
+      expect(authApi.verifyRegistrationOtp).toHaveBeenCalledWith({ code: "654321", draftId: "draft_123" });
+    });
+    expect(await screen.findByRole("heading", { name: "Company profile" })).toBeInTheDocument();
   });
 });
 
@@ -333,6 +517,15 @@ describe("invite acceptance", () => {
       nextAction: { message: "Refresh", type: "REFRESH_AUTH_SESSION" },
       user: {},
     });
+    inviteApi.previewCompanyInvite.mockResolvedValue({
+      company: { id: "company_123", name: "Cargo Admin Co" },
+      companyId: "company_123",
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      id: "invite_123",
+      invitedEmail: "admin@cargo.test",
+      status: "PENDING",
+      targetRole: "COMPANY_DRIVER",
+    });
     usersApi.getMe.mockResolvedValue(adminUser);
   });
 
@@ -350,7 +543,7 @@ describe("invite acceptance", () => {
     expect(screen.getByRole("heading", { name: "Invite link is incomplete" })).toBeInTheDocument();
   });
 
-  it("keeps the invite route public and lets guests set up a password", () => {
+  it("keeps the invite route public and locks the invited email", async () => {
     useAuthStore.setState({ status: "guest", user: null });
 
     render(
@@ -361,7 +554,11 @@ describe("invite acceptance", () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByRole("heading", { name: "Set up your invited account" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Set up your invited account" })).toBeInTheDocument();
+    const emailInput = screen.getByLabelText(/invited email/i);
+    expect(emailInput).toHaveValue("admin@cargo.test");
+    expect(emailInput).toHaveAttribute("readonly");
+    expect(screen.getByText(/Cargo Admin Co/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /sign in instead/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /send verification code/i })).not.toBeInTheDocument();
   });
@@ -378,7 +575,7 @@ describe("invite acceptance", () => {
       </QueryClientProvider>,
     );
 
-    await userEvent.type(screen.getByLabelText(/invited email/i), "admin@cargo.test");
+    expect(await screen.findByLabelText(/invited email/i)).toHaveValue("admin@cargo.test");
     await userEvent.type(screen.getByLabelText(/first name/i), "Ada");
     await userEvent.type(screen.getByLabelText(/last name/i), "Admin");
     await userEvent.type(screen.getByLabelText(/^password/i), "password1");
@@ -390,17 +587,21 @@ describe("invite acceptance", () => {
       purpose: "REGISTER_VERIFY",
     });
 
+    expect(screen.queryByRole("button", { name: /edit details/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /create account/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /verify code/i })).toBeInTheDocument();
     await userEvent.type(await screen.findByLabelText(/account setup otp/i), "123456");
-    await userEvent.click(screen.getByRole("button", { name: /create account/i }));
 
-    expect(authApi.verifyOtp).toHaveBeenCalledWith({ challengeId: "challenge_123", code: "123456" });
-    expect(authApi.register).toHaveBeenCalledWith({
-      email: "admin@cargo.test",
-      firstName: "Ada",
-      lastName: "Admin",
-      otpChallengeId: "challenge_123",
-      password: "password1",
-      role: "JOB_SEEKER",
+    await waitFor(() => {
+      expect(authApi.verifyOtp).toHaveBeenCalledWith({ challengeId: "challenge_123", code: "123456" });
+      expect(authApi.register).toHaveBeenCalledWith({
+        email: "admin@cargo.test",
+        firstName: "Ada",
+        lastName: "Admin",
+        otpChallengeId: "challenge_123",
+        password: "password1",
+        role: "JOB_SEEKER",
+      });
     });
     expect(await screen.findByRole("button", { name: /send verification code/i })).toBeInTheDocument();
   });
@@ -416,7 +617,7 @@ describe("invite acceptance", () => {
       </QueryClientProvider>,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: /send verification code/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /send verification code/i }));
 
     expect(authApi.requestOtp).toHaveBeenCalledWith({
       channel: "EMAIL",
@@ -440,16 +641,18 @@ describe("invite acceptance", () => {
       </QueryClientProvider>,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: /send verification code/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /send verification code/i }));
     await userEvent.type(await screen.findByLabelText(/otp code/i), "123456");
-    await userEvent.click(screen.getByRole("button", { name: /accept invite/i }));
 
-    expect(authApi.verifyOtp).toHaveBeenCalledWith({ challengeId: "challenge_123", code: "123456" });
-    expect(inviteApi.acceptCompanyInvite).toHaveBeenCalledWith({
-      otpChallengeId: "challenge_123",
-      token: "9fd823c82cbe7aa447807e73f80f35c4eacb814226c5758a",
+    await waitFor(() => {
+      expect(authApi.verifyOtp).toHaveBeenCalledWith({ challengeId: "challenge_123", code: "123456" });
+      expect(inviteApi.acceptCompanyInvite).toHaveBeenCalledWith({
+        otpChallengeId: "challenge_123",
+        token: "9fd823c82cbe7aa447807e73f80f35c4eacb814226c5758a",
+      });
     });
     expect(usersApi.getMe).toHaveBeenCalled();
     expect(await screen.findByText("Dashboard reached")).toBeInTheDocument();
   });
 });
+

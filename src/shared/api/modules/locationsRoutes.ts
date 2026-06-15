@@ -2,6 +2,7 @@ import { apiClient, unwrapData } from "@/shared/api/apiClient";
 
 export type Location = {
   city: string;
+  companyId?: string | null;
   countryCode: string;
   createdAt: string;
   deletedAt: string | null;
@@ -50,7 +51,13 @@ export type CreateRouteInput = {
   originLocationId: string;
 };
 
-export function listLocations(params?: { city?: string; countryCode?: string }) {
+export type LocationListParams = {
+  city?: string;
+  countryCode?: string;
+  deleted?: "active" | "only" | "include";
+};
+
+export function listLocations(params?: LocationListParams) {
   return unwrapData<Location[]>(apiClient.get("/locations", { params }));
 }
 
@@ -70,8 +77,14 @@ export function restoreLocation(locationId: string) {
   return unwrapData<Location>(apiClient.post(`/locations/${locationId}/restore`, {}));
 }
 
-export function listRoutes() {
-  return unwrapData<RouteRecord[]>(apiClient.get("/routes"));
+export type RouteListParams = {
+  deleted?: "active" | "only" | "include";
+  destinationLocationId?: string;
+  originLocationId?: string;
+};
+
+export function listRoutes(params?: RouteListParams) {
+  return unwrapData<RouteRecord[]>(apiClient.get("/routes", { params }));
 }
 
 export function createRoute(input: CreateRouteInput) {

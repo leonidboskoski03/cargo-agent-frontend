@@ -15,6 +15,10 @@ export type Company = {
   foundedAt?: string | null;
   id: string;
   isVerified: boolean;
+  verificationCheckedAt?: string | null;
+  verificationFailureReason?: string | null;
+  verificationProvider?: string | null;
+  verificationStatus: "UNVERIFIED" | "PENDING" | "VERIFIED" | "FAILED" | "NEEDS_REVIEW";
   logoUrl?: string | null;
   name: string;
   phone?: string | null;
@@ -50,6 +54,10 @@ export function getMyCompany() {
 
 export function updateMyCompany(input: CompanyUpdateInput) {
   return unwrapData<Company>(apiClient.patch("/companies/me", input));
+}
+
+export function requestMyCompanyVerification() {
+  return unwrapData<Company>(apiClient.post("/companies/me/verification", {}));
 }
 
 export function deleteMyCompany() {

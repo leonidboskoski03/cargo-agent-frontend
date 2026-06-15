@@ -1,7 +1,7 @@
 import { RotateCcw, Star, Trash2 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { listContracts } from "@/shared/api/modules/contracts";
 import {
   changeReviewStatus,
@@ -35,17 +35,24 @@ function reviewTone(status: ReviewStatus) {
 
 export function ReviewsPage() {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const initialContractId = searchParams.get("contractId") ?? "";
   const user = useAuthStore((state) => state.user);
   const canManage = canManageReviews(user?.role);
   const [statusFilter, setStatusFilter] = useState<ReviewStatus | "">("");
-  const [contractFilter, setContractFilter] = useState("");
+  const [contractFilter, setContractFilter] = useState(initialContractId);
   const [recentlyDeleted, setRecentlyDeleted] = useState<ReviewRecord | null>(null);
+  const [registryView, setRegistryView] = useState<"active" | "deleted">("active");
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
-  const [form, setForm] = useState({ comment: "", contractId: "", rating: 5, status: "DRAFT" as ReviewStatus });
+  const [form, setForm] = useState({ comment: "", contractId: initialContractId, rating: 5, status: "DRAFT" as ReviewStatus });
   const filters = useMemo(() => reviewFilterSchema.parse({ contractId: contractFilter, status: statusFilter || undefined }), [contractFilter, statusFilter]);
-  const reviewsQuery = useQuery({ queryFn: () => listReviews(filters), queryKey: ["reviews", filters] });
+  const reviewsQuery = useQuery({
+    queryFn: () => listReviews({ ...filters, deleted: registryView === "deleted" ? "only" : "active" }),
+    queryKey: ["reviews", filters, registryView],
+  });
   const contractsQuery = useQuery({ enabled: canManage, queryFn: () => listContracts({ status: "COMPLETED" }), queryKey: ["contracts", "completed"] });
   const reviews = reviewsQuery.data ?? [];
+  const isDeletedView = registryView === "deleted";
   const completedContracts = contractsQuery.data ?? [];
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["reviews"] });
   const createMutation = useAppMutation({ mutationFn: createReview, messages: { success: "Review created." }, onSuccess: () => {
@@ -120,9 +127,31 @@ export function ReviewsPage() {
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-xl font-semibold tracking-normal">Review records</h2>
-              <p className="mt-1 text-sm text-muted">{reviews.length} contract-linked reviews.</p>
+              <p className="mt-1 text-sm text-muted">
+                {isDeletedView ? `${reviews.length} deleted contract-linked reviews.` : `${reviews.length} contract-linked reviews.`}
+              </p>
             </div>
             <div className="flex flex-wrap items-end gap-2">
+              <div className="inline-flex w-fit rounded-lg border border-border bg-surface-pearl p-1" aria-label="Review registry view">
+                <Button
+                  aria-pressed={!isDeletedView}
+                  className="min-h-8 px-3 py-1 text-sm"
+                  onClick={() => setRegistryView("active")}
+                  type="button"
+                  variant={!isDeletedView ? "secondary" : "ghost"}
+                >
+                  Active
+                </Button>
+                <Button
+                  aria-pressed={isDeletedView}
+                  className="min-h-8 px-3 py-1 text-sm"
+                  onClick={() => setRegistryView("deleted")}
+                  type="button"
+                  variant={isDeletedView ? "secondary" : "ghost"}
+                >
+                  Deleted
+                </Button>
+              </div>
               <Field label="Status">
                 <Select onChange={(event) => setStatusFilter(event.target.value as ReviewStatus | "")} value={statusFilter}>
                   <option value="">All</option>
@@ -142,7 +171,10 @@ export function ReviewsPage() {
           ) : reviewsQuery.isError ? (
             <ErrorState error={reviewsQuery.error} title="Reviews unavailable" />
           ) : reviews.length === 0 ? (
-            <EmptyState description="Reviews for contracts in your company context will appear here." title="No reviews" />
+            <EmptyState
+              description={isDeletedView ? "Deleted reviews for contracts in your company context will appear here." : "Reviews for contracts in your company context will appear here."}
+              title={isDeletedView ? "No deleted reviews" : "No reviews"}
+            />
           ) : (
             <Table>
               <thead><tr><Th>Review</Th><Th>Status</Th><Th>Contract</Th><Th>Created</Th>{canManage ? <Th>Actions</Th> : null}</tr></thead>
@@ -153,23 +185,35 @@ export function ReviewsPage() {
                       <Link className="font-semibold text-primary" to={`/reviews/${review.id}`}>{review.rating}/5 stars</Link>
                       <p className="mt-1 text-sm text-muted">{review.comment ?? "No comment"}</p>
                     </Td>
-                    <Td><StatusBadge tone={reviewTone(review.status)}>{review.status}</StatusBadge></Td>
+                    <Td><StatusBadge tone={isDeletedView ? "danger" : reviewTone(review.status)}>{isDeletedView ? "DELETED" : review.status}</StatusBadge></Td>
                     <Td>Contract {review.contractId.slice(0, 8)}</Td>
                     <Td>{formatDate(review.createdAt)}</Td>
                     {canManage ? (
                       <Td>
                         <div className="flex flex-wrap gap-2">
-                          <Select
-                            aria-label={`Change status for review ${review.id}`}
-                            className="w-36"
-                            onChange={(event) => statusMutation.mutate({ reviewId: review.id, status: event.target.value as ReviewStatus })}
-                            value={review.status}
-                          >
-                            {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
-                          </Select>
-                          <Button disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(review.id)} type="button" variant="danger">
-                            <Trash2 className="size-4" /> Delete
-                          </Button>
+                          {isDeletedView ? (
+                            review.reviewerCompanyId === user?.companyId ? (
+                              <Button disabled={restoreMutation.isPending} onClick={() => restoreMutation.mutate(review.id)} type="button" variant="secondary">
+                                <RotateCcw className="size-4" /> Restore
+                              </Button>
+                            ) : (
+                              <span className="text-sm text-muted">Deleted by reviewer</span>
+                            )
+                          ) : (
+                            <>
+                              <Select
+                                aria-label={`Change status for review ${review.id}`}
+                                className="w-36"
+                                onChange={(event) => statusMutation.mutate({ reviewId: review.id, status: event.target.value as ReviewStatus })}
+                                value={review.status}
+                              >
+                                {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                              </Select>
+                              <Button disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(review.id)} type="button" variant="danger">
+                                <Trash2 className="size-4" /> Delete
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </Td>
                     ) : null}

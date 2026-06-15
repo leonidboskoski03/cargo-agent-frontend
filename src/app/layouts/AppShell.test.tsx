@@ -4,12 +4,16 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "@/features/auth/authStore";
+import { languageStorageKey } from "@/shared/i18n";
 import { useUiStore } from "@/shared/stores/uiStore";
 import { AppShell } from "./AppShell";
 
 const localizationApi = vi.hoisted(() => ({ listSupportedLanguages: vi.fn() }));
 const notificationsApi = vi.hoisted(() => ({ listNotifications: vi.fn() }));
+const companyCreditsApi = vi.hoisted(() => ({ getCompanyCreditWallet: vi.fn() }));
+const jobSeekerBillingApi = vi.hoisted(() => ({ getJobSeekerWallet: vi.fn() }));
 const authApi = vi.hoisted(() => ({ logout: vi.fn() }));
+const usersApi = vi.hoisted(() => ({ updateMyUser: vi.fn() }));
 
 vi.mock("@/shared/api/modules/localization", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/shared/api/modules/localization")>()),
@@ -21,9 +25,24 @@ vi.mock("@/shared/api/modules/notifications", async (importOriginal) => ({
   listNotifications: notificationsApi.listNotifications,
 }));
 
+vi.mock("@/shared/api/modules/companyCredits", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/shared/api/modules/companyCredits")>()),
+  getCompanyCreditWallet: companyCreditsApi.getCompanyCreditWallet,
+}));
+
+vi.mock("@/shared/api/modules/jobSeekerBilling", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/shared/api/modules/jobSeekerBilling")>()),
+  getJobSeekerWallet: jobSeekerBillingApi.getJobSeekerWallet,
+}));
+
 vi.mock("@/shared/api/modules/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/shared/api/modules/auth")>()),
   logout: authApi.logout,
+}));
+
+vi.mock("@/shared/api/modules/users", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/shared/api/modules/users")>()),
+  updateMyUser: usersApi.updateMyUser,
 }));
 
 const adminUser = {
@@ -80,9 +99,13 @@ async function pinSidebarIfClosed() {
 describe("AppShell navigation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     localizationApi.listSupportedLanguages.mockResolvedValue([{ code: "en", label: "English", nativeName: "English" }]);
     notificationsApi.listNotifications.mockResolvedValue([]);
+    companyCreditsApi.getCompanyCreditWallet.mockResolvedValue({ balanceCredits: 12, companyId: adminUser.companyId, updatedAt: "" });
+    jobSeekerBillingApi.getJobSeekerWallet.mockResolvedValue({ balanceCredits: 4, updatedAt: "", userId: jobSeekerUser.id });
     authApi.logout.mockResolvedValue({});
+    usersApi.updateMyUser.mockImplementation((input) => Promise.resolve({ ...adminUser, preferredLanguage: input.preferredLanguage }));
     useAuthStore.setState({ status: "authenticated", user: adminUser });
     useUiStore.setState({ activeNavSectionId: "home", secondaryPanelOpen: false, sidebarOpen: false });
   });
@@ -150,6 +173,26 @@ describe("AppShell navigation", () => {
     expect(within(panel).queryByRole("link", { name: /Audit logs/i })).not.toBeInTheDocument();
   });
 
+  it("limits company driver sidebar to planning, company posts, and company", async () => {
+    useAuthStore.setState({ status: "authenticated", user: driverUser });
+
+    renderShell("/posts/mine");
+    await userEvent.click(screen.getByRole("button", { name: "Pin sidebar" }));
+
+    expect(screen.getByRole("button", { name: "Open Planning" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Posts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Company" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Home" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Fleet" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Reviews" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open More" })).not.toBeInTheDocument();
+
+    const panel = await screen.findByTestId("secondary-nav-panel");
+    expect(within(panel).getByRole("link", { name: /Company posts/i })).toHaveAttribute("href", "/posts/mine");
+    expect(within(panel).queryByRole("link", { name: /Quick route post/i })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("link", { name: /Marketplace/i })).not.toBeInTheDocument();
+  });
+
   it("shows job seeker navigation without company-only fleet links", async () => {
     useAuthStore.setState({ status: "authenticated", user: jobSeekerUser });
 
@@ -163,6 +206,45 @@ describe("AppShell navigation", () => {
     const panel = await screen.findByTestId("secondary-nav-panel");
     expect(within(panel).getByRole("link", { name: /My listings/i })).toBeInTheDocument();
     expect(within(panel).getByRole("link", { name: /Job wallet/i })).toBeInTheDocument();
+  });
+
+  it("shows a compact company wallet and account controls in the header", async () => {
+    renderShell("/dashboard");
+
+    expect(await screen.findByRole("link", { name: /company credits: 12 credits/i })).toHaveAttribute("href", "/company-credits");
+    await userEvent.click(screen.getByRole("button", { name: "Open account menu" }));
+
+    expect(screen.queryByRole("link", { name: /Company settings/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Change password/i })).toHaveAttribute("href", "/account/password");
+    await userEvent.click(screen.getByRole("button", { name: /Log out/i }));
+
+    expect(authApi.logout).toHaveBeenCalled();
+  });
+
+  it("keeps job seeker profile in the account menu with a job wallet shortcut", async () => {
+    useAuthStore.setState({ status: "authenticated", user: jobSeekerUser });
+
+    renderShell("/jobs");
+
+    expect(await screen.findByRole("link", { name: /job wallet: 4 credits/i })).toHaveAttribute("href", "/job-wallet");
+    await userEvent.click(screen.getByRole("button", { name: "Open account menu" }));
+
+    expect(screen.getByRole("link", { name: /^Profile$/i })).toHaveAttribute("href", "/job-profile");
+  });
+
+  it("persists selected language in browser storage and user profile", async () => {
+    localizationApi.listSupportedLanguages.mockResolvedValue([
+      { code: "en", label: "English", nativeName: "English" },
+      { code: "mk", label: "Macedonian", nativeName: "Macedonian" },
+    ]);
+
+    renderShell("/dashboard");
+
+    await userEvent.click(screen.getByRole("button", { name: /change language/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Macedonian/i }));
+
+    expect(window.localStorage.getItem(languageStorageKey)).toBe("mk");
+    await waitFor(() => expect(usersApi.updateMyUser.mock.calls.at(-1)?.[0]).toEqual({ preferredLanguage: "mk" }));
   });
 
   it("renders grouped navigation inside the mobile drawer", async () => {

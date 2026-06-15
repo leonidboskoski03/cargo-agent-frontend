@@ -4,6 +4,7 @@ export type DocumentKind = "COMPANY_LICENSE" | "VEHICLE_REGISTRATION" | "INSURAN
 
 export type DocumentRecord = {
   createdAt: string;
+  deletedAt?: string | null;
   id: string;
   kind?: DocumentKind;
   metadataJson?: unknown;
@@ -14,6 +15,7 @@ export type DocumentRecord = {
 };
 
 export type DocumentsQuery = {
+  deleted?: "active" | "only" | "include";
   kind?: DocumentKind;
   page?: number;
   pageSize?: number;

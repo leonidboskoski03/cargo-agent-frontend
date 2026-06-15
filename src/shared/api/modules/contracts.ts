@@ -68,7 +68,12 @@ export type UpdateContractTimelineInput = {
   pickupPlannedAt?: string;
 };
 
-export function listContracts(params?: { status?: ContractStatus }) {
+export type ContractListParams = {
+  deleted?: "active" | "only" | "include";
+  status?: ContractStatus;
+};
+
+export function listContracts(params?: ContractListParams) {
   return unwrapData<ContractRecord[]>(apiClient.get("/contracts", { params }));
 }
 

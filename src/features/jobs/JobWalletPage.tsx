@@ -8,7 +8,7 @@ import {
   listJobSeekerCreditPacks,
   listJobSeekerTransactions,
 } from "@/shared/api/modules/jobSeekerBilling";
-import { getBillingReadiness } from "@/shared/api/modules/billingReadiness";
+import { getBillingReadiness, type BillingReadiness } from "@/shared/api/modules/billingReadiness";
 import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
@@ -20,6 +20,17 @@ import { BillingProviderBanner } from "@/features/billing/BillingProviderBanner"
 function idempotencyKey(packCode: string) {
   const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}`;
   return `job-wallet-${packCode}-${suffix}`;
+}
+
+function jobWalletCheckoutSetupMessage(readiness?: BillingReadiness) {
+  if (!readiness) return "Checking Stripe job wallet setup before purchases are enabled.";
+  if (!readiness.stripeSecretConfigured) return "Stripe test secret key is missing. Configure it before starting job wallet checkout.";
+  if (!readiness.jobSeekerCreditPricesConfigured) return "Job seeker credit pack Stripe prices are missing. Add price IDs to the seeded credit packs before checkout.";
+  return null;
+}
+
+function jobWalletCheckoutErrorDescription() {
+  return "Job wallet checkout is not ready yet. Check Stripe test keys and job seeker credit pack price IDs, then try again.";
 }
 
 export function JobWalletPage() {
@@ -63,6 +74,7 @@ export function JobWalletPage() {
   const usage = usageQuery.data;
   const packs = packsQuery.data ?? [];
   const transactions = transactionsQuery.data ?? [];
+  const checkoutSetupMessage = jobWalletCheckoutSetupMessage(readinessQuery.data);
 
   return (
     <div className="space-y-6">
@@ -82,7 +94,7 @@ export function JobWalletPage() {
         <ErrorState description="Billing readiness could not be loaded. Checkout errors will still include trace IDs." error={readinessQuery.error} title="Job wallet readiness unavailable" />
       ) : null}
       {checkoutMutation.error ? (
-        <ErrorState description="Job wallet checkout could not be started. Check Stripe sandbox price setup and webhook readiness." error={checkoutMutation.error} title="Unable to start checkout" />
+        <ErrorState description={jobWalletCheckoutErrorDescription()} error={checkoutMutation.error} title="Unable to start checkout" />
       ) : null}
 
       <section className="grid gap-4 lg:grid-cols-4">
@@ -110,6 +122,9 @@ export function JobWalletPage() {
 
       <Surface>
         <h2 className="text-xl font-semibold">Credit packs</h2>
+        {checkoutSetupMessage ? (
+          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">{checkoutSetupMessage}</p>
+        ) : null}
         {packs.length === 0 ? (
           <p className="mt-3 text-sm text-muted">No active credit packs are available.</p>
         ) : (
@@ -126,7 +141,7 @@ export function JobWalletPage() {
                 <p className="mt-4 text-lg font-semibold">{pack.priceAmount} {pack.currency}</p>
                 <Button
                   className="mt-4 w-full"
-                  disabled={checkoutMutation.isPending || !pack.isActive}
+                  disabled={checkoutMutation.isPending || !pack.isActive || Boolean(checkoutSetupMessage)}
                   onClick={() => checkoutMutation.mutate({ creditPackCode: pack.code, idempotencyKey: idempotencyKey(pack.code) })}
                   type="button"
                 >

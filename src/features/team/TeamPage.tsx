@@ -21,12 +21,25 @@ export function TeamPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const includeInactive = searchParams.get("includeInactive") === "true";
+  const registryView = searchParams.get("deleted") === "only" ? "deleted" : "active";
+  const isDeletedView = registryView === "deleted";
   const isAdmin = canManageTeam(user?.role);
   const usersQuery = useQuery({
-    queryFn: () => listUsers({ includeInactive }),
-    queryKey: ["users", "team", includeInactive],
+    queryFn: () => listUsers({ deleted: isDeletedView ? "only" : "active", includeInactive: isDeletedView ? true : includeInactive }),
+    queryKey: ["users", "team", registryView, includeInactive],
   });
   const users = usersQuery.data ?? [];
+
+  function setRegistryView(value: "active" | "deleted") {
+    const next = new URLSearchParams(searchParams);
+    if (value === "deleted") {
+      next.set("deleted", "only");
+      next.delete("includeInactive");
+    } else {
+      next.delete("deleted");
+    }
+    setSearchParams(next);
+  }
 
   function setIncludeInactive(value: boolean) {
     const next = new URLSearchParams(searchParams);
@@ -92,7 +105,7 @@ export function TeamPage() {
           </Link>
         }
         eyebrow="Company admin"
-        subtitle="Manage company users, role membership, and inactive visibility from one tenant-scoped view."
+        subtitle="Manage company users, role membership, inactive visibility, and deleted-user recovery from tenant-scoped views."
         title="Team"
       />
 
@@ -107,15 +120,30 @@ export function TeamPage() {
               <p className="mt-1 text-sm leading-6 text-muted">Self role changes are hidden before the backend rejects them.</p>
             </div>
           </div>
-          <Button onClick={() => setIncludeInactive(!includeInactive)} type="button" variant="secondary">
-            <RotateCcw aria-hidden="true" className="size-4" />
-            {includeInactive ? "Hide Inactive" : "Show Inactive"}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg border border-border bg-surface-pearl p-1" aria-label="Team registry view">
+              <Button aria-pressed={!isDeletedView} className="min-h-8 px-3 py-1 text-sm" onClick={() => setRegistryView("active")} type="button" variant={!isDeletedView ? "secondary" : "ghost"}>
+                Active
+              </Button>
+              <Button aria-pressed={isDeletedView} className="min-h-8 px-3 py-1 text-sm" onClick={() => setRegistryView("deleted")} type="button" variant={isDeletedView ? "secondary" : "ghost"}>
+                Deleted
+              </Button>
+            </div>
+            {!isDeletedView ? (
+              <Button onClick={() => setIncludeInactive(!includeInactive)} type="button" variant="secondary">
+                <RotateCcw aria-hidden="true" className="size-4" />
+                {includeInactive ? "Hide Inactive" : "Show Inactive"}
+              </Button>
+            ) : null}
+          </div>
         </div>
       </Surface>
 
       {users.length === 0 ? (
-        <EmptyState description="No company users were returned for this workspace." title="No users found" />
+        <EmptyState
+          description={isDeletedView ? "Deleted team users will appear here after an admin removes them from the active roster." : "No company users were returned for this workspace."}
+          title={isDeletedView ? "No deleted users" : "No users found"}
+        />
       ) : (
         <Table>
           <thead>
@@ -131,6 +159,7 @@ export function TeamPage() {
             {users.map((target) => {
               const canEditMembership = canChangeMembership({ currentUserId: user?.id, role: user?.role, targetUserId: target.id });
               const canDelete = canDeleteTeamUser({ currentUserId: user?.id, role: user?.role, targetUserId: target.id });
+              const canRestore = isDeletedView && Boolean(target.deletedAt) && target.companyId === user?.companyId;
               const nextRole = target.role === "COMPANY_ADMIN" ? "COMPANY_DRIVER" : "COMPANY_ADMIN";
 
               return (
@@ -140,11 +169,11 @@ export function TeamPage() {
                     <p className="mt-1 break-words text-xs text-muted">{target.email}</p>
                   </Td>
                   <Td>{target.role}</Td>
-                  <Td><StatusBadge tone={userTone(target)}>{target.isActive ? "ACTIVE" : "INACTIVE"}</StatusBadge></Td>
+                  <Td><StatusBadge tone={userTone(target)}>{target.deletedAt ? "DELETED" : target.isActive ? "ACTIVE" : "INACTIVE"}</StatusBadge></Td>
                   <Td>{target.phone ?? "Not set"}</Td>
                   <Td>
                     <div className="flex flex-wrap gap-2">
-                      {canEditMembership ? (
+                      {!isDeletedView && canEditMembership ? (
                         <Button
                           className="h-9 min-h-9 px-4"
                           disabled={membershipMutation.isPending}
@@ -156,7 +185,7 @@ export function TeamPage() {
                           Make {nextRole === "COMPANY_ADMIN" ? "Admin" : "Driver"}
                         </Button>
                       ) : null}
-                      {canDelete ? (
+                      {!isDeletedView && canDelete ? (
                         <Button
                           className="h-9 min-h-9 px-4"
                           disabled={deleteMutation.isPending}
@@ -167,9 +196,22 @@ export function TeamPage() {
                           <Trash2 aria-hidden="true" className="size-4" />
                           Delete
                         </Button>
-                      ) : (
+                      ) : null}
+                      {canRestore ? (
+                        <Button
+                          className="h-9 min-h-9 px-4"
+                          disabled={restoreMutation.isPending}
+                          onClick={() => restoreMutation.mutate(target.id)}
+                          type="button"
+                          variant="secondary"
+                        >
+                          <RotateCcw aria-hidden="true" className="size-4" />
+                          Restore
+                        </Button>
+                      ) : null}
+                      {(!isDeletedView && !canDelete && !canEditMembership) || (isDeletedView && !canRestore) ? (
                         <span className="text-sm text-muted">No actions</span>
-                      )}
+                      ) : null}
                     </div>
                   </Td>
                 </tr>

@@ -24,7 +24,7 @@ export function NewVehicleMarketplaceListingPage() {
   const [searchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const initialVehicleId = searchParams.get("vehicleId") ?? "";
-  const vehiclesQuery = useQuery({ queryFn: listVehicles, queryKey: ["vehicles", "marketplace-source"] });
+  const vehiclesQuery = useQuery({ queryFn: () => listVehicles(), queryKey: ["vehicles", "marketplace-source"] });
   const countriesQuery = useQuery({ queryFn: listSupportedCountries, queryKey: ["geo", "countries"] });
   const [form, setForm] = useState({
     bodyType: "",

@@ -1,11 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight, LockKeyhole, Mail, Shield } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { login, loginVerifyOtp, verifyOtp } from "@/shared/api/modules/auth";
+import { login, loginVerifyOtp, resendOtp, verifyOtp } from "@/shared/api/modules/auth";
 import { getMe } from "@/shared/api/modules/users";
 import { Button } from "@/shared/components/ui/Button";
 import { Field } from "@/shared/components/ui/Form";
@@ -14,11 +14,15 @@ import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { ApiClientError } from "@/shared/api/apiClient";
 import { useAuthStore } from "./authStore";
 import { loginSchema, mfaSchema, type LoginFormValues, type MfaFormValues } from "./authSchemas";
+import { OtpResendButton } from "./OtpResendButton";
 
 type MfaState = {
   challengeId: string;
   email: string;
   password: string;
+  expiresAt?: string;
+  nextResendAt?: string;
+  resendAttemptsRemaining?: number;
 };
 
 function defaultPathForRole(role: string) {
@@ -50,13 +54,21 @@ export function LoginPage() {
     resolver: zodResolver(mfaSchema),
     defaultValues: { code: "" },
   });
-  const mfaCode = useWatch({ control: mfaForm.control, name: "code" });
+  const mfaCode = useWatch({ control: mfaForm.control, name: "code" }) ?? "";
+  const lastAutoSubmittedMfaCode = useRef("");
 
   const loginMutation = useAppMutation({
     mutationFn: login,
     onSuccess: async (data, values) => {
       if ("challengeId" in data) {
-        setMfaState({ challengeId: data.challengeId, email: values.email, password: values.password });
+        setMfaState({
+          challengeId: data.challengeId,
+          email: values.email,
+          expiresAt: data.expiresAt,
+          nextResendAt: data.nextResendAt,
+          password: values.password,
+          resendAttemptsRemaining: data.resendAttemptsRemaining,
+        });
         toast.info("Verification required", {
           description: "Enter the OTP code delivered by email or SMS. Preview codes are not shown in the app.",
         });
@@ -85,6 +97,48 @@ export function LoginPage() {
       navigate(resolvePostLoginPath(profile, from ?? defaultPathForRole(profile.role)), { replace: true });
     },
   });
+
+  const resendMfaMutation = useAppMutation({
+    messages: { success: "Verification code resent" },
+    mutationFn: async () => {
+      if (!mfaState) throw new ApiClientError({ code: "MFA_MISSING", message: "MFA challenge is missing." });
+      return resendOtp({ challengeId: mfaState.challengeId });
+    },
+    onSuccess: (data) => {
+      setMfaState((current) =>
+        current
+          ? {
+              ...current,
+              challengeId: data.challengeId,
+              expiresAt: data.expiresAt,
+              nextResendAt: data.nextResendAt,
+              resendAttemptsRemaining: data.resendAttemptsRemaining,
+            }
+          : current,
+      );
+      mfaForm.reset();
+    },
+  });
+
+  useEffect(() => {
+    if (!mfaState) {
+      lastAutoSubmittedMfaCode.current = "";
+      return;
+    }
+
+    if (mfaCode.length < 6) {
+      lastAutoSubmittedMfaCode.current = "";
+      return;
+    }
+
+    if (mfaMutation.isPending || lastAutoSubmittedMfaCode.current === mfaCode) return;
+
+    const parsed = mfaSchema.safeParse({ code: mfaCode });
+    if (!parsed.success) return;
+
+    lastAutoSubmittedMfaCode.current = mfaCode;
+    mfaMutation.mutate(parsed.data);
+  }, [mfaCode, mfaMutation, mfaState]);
 
   return (
     <main className="grid min-h-dvh bg-background lg:grid-cols-[0.9fr_1.1fr]">
@@ -124,6 +178,14 @@ export function LoginPage() {
                   onChange={(code) => mfaForm.setValue("code", code, { shouldDirty: true, shouldValidate: true })}
                   value={mfaCode}
                 />
+                <OtpResendButton
+                  attemptsRemaining={mfaState.resendAttemptsRemaining}
+                  className="mt-4"
+                  disabled={mfaMutation.isPending}
+                  isPending={resendMfaMutation.isPending}
+                  nextResendAt={mfaState.nextResendAt}
+                  onResend={() => resendMfaMutation.mutate()}
+                />
               </Field>
             ) : (
               <>
@@ -159,12 +221,16 @@ export function LoginPage() {
             {mfaState ? "Verify and continue" : t("auth.login.submit")}
             <ArrowRight className="size-4" />
           </Button>
-          <Link className="mt-4 block text-center text-sm text-primary" to="/register">
-            Create an account
-          </Link>
-          <Link className="mt-3 block text-center text-sm text-muted hover:text-primary" to="/forgot-password">
-            Forgot your password?
-          </Link>
+          {!mfaState ? (
+            <>
+              <Link className="mt-4 block text-center text-sm text-primary" to="/register">
+                Create an account
+              </Link>
+              <Link className="mt-3 block text-center text-sm text-muted hover:text-primary" to="/forgot-password">
+                Forgot your password?
+              </Link>
+            </>
+          ) : null}
         </form>
       </section>
     </main>

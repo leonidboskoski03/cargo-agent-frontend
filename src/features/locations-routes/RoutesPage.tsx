@@ -1,14 +1,15 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitBranchPlus, Map, RotateCcw, Save, Trash2 } from "lucide-react";
+import { GitBranchPlus, Map, Pencil, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toApiClientError } from "@/shared/api/apiClient";
 import { createRoute, deleteRoute, estimateRoute, listLocations, listRoutes, restoreRoute, updateRoute, type RouteRecord } from "@/shared/api/modules/locationsRoutes";
 import { Button } from "@/shared/components/ui/Button";
-import { Table, Td, Th } from "@/shared/components/ui/DataTable";
+import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
 import { Field, Input, Select } from "@/shared/components/ui/Form";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
+import { Tooltip } from "@/shared/components/ui/Tooltip";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { useAuthStore } from "@/features/auth/authStore";
 import { canManageCompanyPosts } from "@/features/posts/postPermissions";
@@ -45,9 +46,14 @@ export function RoutesPage() {
   const canManage = canManageCompanyPosts(user?.role);
   const [editing, setEditing] = useState<RouteRecord | null>(null);
   const [deleted, setDeleted] = useState<RouteRecord | null>(null);
+  const [registryView, setRegistryView] = useState<"active" | "deleted">("active");
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [routePage, setRoutePage] = useState(1);
   const locationsQuery = useQuery({ queryFn: () => listLocations(), queryKey: ["locations"] });
-  const routesQuery = useQuery({ queryFn: () => listRoutes(), queryKey: ["routes"] });
+  const routesQuery = useQuery({
+    queryFn: () => listRoutes({ deleted: registryView === "deleted" ? "only" : "active" }),
+    queryKey: ["routes", registryView],
+  });
   const form = useForm<RouteFormInput, unknown, RouteFormValues>({ resolver: zodResolver(routeSchema), defaultValues: routeDefaults });
   const selectedOriginLocationId = useWatch({ control: form.control, name: "originLocationId" });
   const selectedDestinationLocationId = useWatch({ control: form.control, name: "destinationLocationId" });
@@ -80,6 +86,7 @@ export function RoutesPage() {
 
   const locations = locationsQuery.data ?? [];
   const routes = routesQuery.data ?? [];
+  const isDeletedView = registryView === "deleted";
   const estimateError = estimateMutation.error ? toApiClientError(estimateMutation.error) : null;
   const selectedRoute = routes.find((route) => route.id === selectedRouteId) ?? null;
   const selectedOrigin = locations.find((location) => location.id === selectedOriginLocationId);
@@ -97,7 +104,16 @@ export function RoutesPage() {
     originLocationId: selectedOrigin.id,
     updatedAt: "",
   } : null;
-  const mapRoute = draftRoute ?? selectedRoute ?? routes[0] ?? null;
+  const routePageCount = Math.max(1, Math.ceil(routes.length / 5));
+  const activeRoutePage = Math.min(routePage, routePageCount);
+  const visibleRoutes = routes.slice((activeRoutePage - 1) * 5, activeRoutePage * 5);
+
+  function setRegistryMode(view: "active" | "deleted") {
+    setRegistryView(view);
+    setRoutePage(1);
+    setEditing(null);
+    setSelectedRouteId(null);
+  }
 
   return (
     <div className="space-y-2">
@@ -110,13 +126,13 @@ export function RoutesPage() {
         </Surface>
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[0.36fr_0.64fr]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(300px,0.32fr)_1fr]">
         {canManage ? (
-          <Surface>
-            <form className="space-y-4" onSubmit={form.handleSubmit((values) => editing ? updateMutation.mutate(values) : createMutation.mutate(values))}>
+          <Surface className="p-4">
+            <form className="space-y-3" onSubmit={form.handleSubmit((values) => editing ? updateMutation.mutate(values) : createMutation.mutate(values))}>
               <div>
-                <h2 className="text-2xl font-semibold tracking-normal">{editing ? "Edit route" : "Create route"}</h2>
-                <p className="mt-1 text-sm leading-6 text-muted">Choose locations, then let truck distance and duration estimate when configured.</p>
+                <h2 className="text-xl font-semibold tracking-normal">{editing ? "Edit route" : "Create route"}</h2>
+                <p className="mt-1 text-sm leading-5 text-muted">Choose saved locations and let truck distance estimate when configured.</p>
               </div>
               <Field error={form.formState.errors.originLocationId} label="Origin" required>
                 <Select {...form.register("originLocationId")}><option value="">Select origin</option>{locations.map((location) => <option key={location.id} value={location.id}>{locationLabel(location)}</option>)}</Select>
@@ -135,9 +151,15 @@ export function RoutesPage() {
                 </p>
               ) : null}
               {estimateError ? <p className="text-xs text-muted">Auto-estimate unavailable: {estimateError.message}{estimateError.traceId ? ` Trace ID: ${estimateError.traceId}` : ""}</p> : null}
+              {draftRoute ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase text-muted">Draft lane preview</p>
+                  <RouteConnectionMap className="h-[220px]" route={draftRoute} />
+                </div>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 <Button disabled={createMutation.isPending || updateMutation.isPending || locations.length < 2} type="submit"><Save className="size-4" /> {editing ? "Save route" : "Add route"}</Button>
-                {editing ? <Button onClick={() => setEditing(null)} type="button" variant="secondary">Cancel</Button> : null}
+                {editing ? <Button onClick={() => setEditing(null)} type="button" variant="secondary"><X className="size-4" /> Cancel</Button> : null}
               </div>
             </form>
           </Surface>
@@ -149,39 +171,152 @@ export function RoutesPage() {
           </Surface>
         )}
 
-        <Surface>
-          <h2 className="text-2xl font-semibold tracking-normal">Route registry</h2>
-          <RouteConnectionMap className="mt-5" route={mapRoute} />
-          <div className="mt-5">
+        <Surface className="p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold tracking-normal">Route registry</h2>
+              <p className="mt-1 text-sm text-muted">
+                {isDeletedView ? "Restore deleted route lanes from this module view." : "Inspect lane maps only when needed to keep this workspace compact."}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:items-end">
+              {canManage ? (
+                <div className="inline-flex w-fit rounded-lg border border-border bg-surface-pearl p-1" aria-label="Route registry view">
+                  <Button
+                    aria-pressed={!isDeletedView}
+                    className="min-h-8 px-3 py-1 text-sm"
+                    onClick={() => setRegistryMode("active")}
+                    type="button"
+                    variant={!isDeletedView ? "secondary" : "ghost"}
+                  >
+                    Active
+                  </Button>
+                  <Button
+                    aria-pressed={isDeletedView}
+                    className="min-h-8 px-3 py-1 text-sm"
+                    onClick={() => setRegistryMode("deleted")}
+                    type="button"
+                    variant={isDeletedView ? "secondary" : "ghost"}
+                  >
+                    Deleted
+                  </Button>
+                </div>
+              ) : null}
+              {routes.length > 0 ? <p className="text-sm text-muted">{routes.length} total</p> : null}
+            </div>
+          </div>
+          <div className="mt-4 min-h-[340px]">
             {routes.length === 0 ? (
-              <EmptyState description="Create at least two locations, then connect them as a route before publishing transport posts." title="No routes yet" />
+              <EmptyState
+                description={isDeletedView ? "Deleted routes will appear here after admins remove them from the active registry." : "Create at least two locations, then connect them as a route before publishing transport posts."}
+                title={isDeletedView ? "No deleted routes" : "No routes yet"}
+              />
             ) : (
-              <Table>
-                <thead><tr><Th>Origin</Th><Th>Destination</Th><Th>Distance</Th><Th>Duration</Th><Th>Actions</Th></tr></thead>
-                <tbody>
-                  {routes.map((route) => (
-                    <tr key={route.id}>
-                      <Td>{locationLabel(route.originLocation)}</Td>
-                      <Td>{locationLabel(route.destinationLocation)}</Td>
-                      <Td>{route.distanceKm ? `${route.distanceKm} km` : "Not set"}</Td>
-                      <Td>{formatDuration(route.estimatedDurationMinutes)}</Td>
-                      <Td>
-                        {canManage ? (
-                          <div className="flex flex-wrap gap-2">
-                            <Button className="h-9 min-h-9 px-4" onClick={() => setSelectedRouteId(route.id)} type="button" variant="secondary"><Map className="size-4" /> Map</Button>
-                            <Button className="h-9 min-h-9 px-4" onClick={() => setEditing(route)} type="button" variant="secondary">Edit</Button>
-                            <Button className="h-9 min-h-9 px-4" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(route.id)} type="button" variant="danger"><Trash2 className="size-4" /> Delete</Button>
-                          </div>
-                        ) : <span className="text-sm text-muted">Read only</span>}
-                      </Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
+              <div className="space-y-3">
+                <Table>
+                  <thead><tr><Th>Origin</Th><Th>Destination</Th><Th>Distance</Th><Th>Duration</Th><Th>Status</Th><Th className="text-right">Actions</Th></tr></thead>
+                  <tbody>
+                    {visibleRoutes.map((route) => (
+                      <tr key={route.id}>
+                        <Td>{locationLabel(route.originLocation)}</Td>
+                        <Td>{locationLabel(route.destinationLocation)}</Td>
+                        <Td>{route.distanceKm ? `${route.distanceKm} km` : "Not set"}</Td>
+                        <Td>{formatDuration(route.estimatedDurationMinutes)}</Td>
+                        <Td><StatusBadge tone={isDeletedView ? "danger" : route.isActive ? "success" : "warning"}>{isDeletedView ? "Deleted" : route.isActive ? "Active" : "Inactive"}</StatusBadge></Td>
+                        <Td className="text-right">
+                          {canManage ? (
+                            <div className="flex justify-end gap-1.5">
+                              <Tooltip label="Open route map">
+                                <Button
+                                  aria-label={`Open map for ${locationLabel(route.originLocation)} to ${locationLabel(route.destinationLocation)}`}
+                                  className="size-9 min-h-9 px-0"
+                                  onClick={() => setSelectedRouteId(route.id)}
+                                  type="button"
+                                  variant="secondary"
+                                >
+                                  <Map className="size-4" />
+                                </Button>
+                              </Tooltip>
+                              {isDeletedView ? (
+                                <Tooltip label="Restore route">
+                                  <Button
+                                    aria-label={`Restore route ${locationLabel(route.originLocation)} to ${locationLabel(route.destinationLocation)}`}
+                                    className="size-9 min-h-9 px-0"
+                                    disabled={restoreMutation.isPending}
+                                    onClick={() => restoreMutation.mutate(route.id)}
+                                    type="button"
+                                    variant="secondary"
+                                  >
+                                    <RotateCcw className="size-4" />
+                                  </Button>
+                                </Tooltip>
+                              ) : (
+                                <>
+                                  <Tooltip label="Edit route">
+                                    <Button
+                                      aria-label={`Edit route ${locationLabel(route.originLocation)} to ${locationLabel(route.destinationLocation)}`}
+                                      className="size-9 min-h-9 px-0"
+                                      onClick={() => setEditing(route)}
+                                      type="button"
+                                      variant="secondary"
+                                    >
+                                      <Pencil className="size-4" />
+                                    </Button>
+                                  </Tooltip>
+                                  <Tooltip label="Delete route">
+                                    <Button
+                                      aria-label={`Delete route ${locationLabel(route.originLocation)} to ${locationLabel(route.destinationLocation)}`}
+                                      className="size-9 min-h-9 px-0"
+                                      disabled={deleteMutation.isPending}
+                                      onClick={() => deleteMutation.mutate(route.id)}
+                                      type="button"
+                                      variant="danger"
+                                    >
+                                      <Trash2 className="size-4" />
+                                    </Button>
+                                  </Tooltip>
+                                </>
+                              )}
+                            </div>
+                          ) : <span className="text-sm text-muted">Read only</span>}
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-muted">Page {activeRoutePage} of {routePageCount}</p>
+                  <div className="flex items-center gap-2">
+                    <Button className="min-h-8 px-3 py-1 text-sm" disabled={activeRoutePage === 1} onClick={() => setRoutePage(Math.max(1, activeRoutePage - 1))} type="button" variant="ghost">Previous</Button>
+                    <Button className="min-h-8 px-3 py-1 text-sm" disabled={activeRoutePage === routePageCount} onClick={() => setRoutePage(Math.min(routePageCount, activeRoutePage + 1))} type="button" variant="ghost">Next</Button>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </Surface>
       </div>
+      {selectedRoute ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4" role="dialog" aria-modal="true" aria-labelledby="route-map-title">
+          <div className="w-full max-w-5xl rounded-xl border border-border bg-card p-4 shadow-xl">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase text-muted">Route map</p>
+                <h2 className="mt-1 text-xl font-semibold tracking-normal" id="route-map-title">
+                  {locationLabel(selectedRoute.originLocation)} to {locationLabel(selectedRoute.destinationLocation)}
+                </h2>
+                <p className="mt-1 text-sm text-muted">Visual lane is fitted from coordinates. Distance and duration may come from truck routing when configured.</p>
+              </div>
+              <Tooltip label="Close map">
+                <Button aria-label="Close route map" className="size-9 min-h-9 px-0" onClick={() => setSelectedRouteId(null)} type="button" variant="ghost">
+                  <X className="size-4" />
+                </Button>
+              </Tooltip>
+            </div>
+            <RouteConnectionMap className="h-[min(62vh,520px)]" route={selectedRoute} />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

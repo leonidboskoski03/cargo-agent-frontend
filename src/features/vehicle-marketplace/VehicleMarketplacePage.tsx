@@ -121,6 +121,15 @@ export function VehicleMarketplacePage() {
   const user = useAuthStore((state) => state.user);
   const appliedFilters = filtersFromParams(searchParams);
   const [draftFilters, setDraftFilters] = useState(appliedFilters);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(() => Boolean(
+    appliedFilters.priceMin
+      || appliedFilters.priceMax
+      || appliedFilters.yearMin
+      || appliedFilters.yearMax
+      || appliedFilters.capacityMin
+      || appliedFilters.refrigerated !== "ALL"
+      || appliedFilters.hazmatCertified !== "ALL",
+  ));
   const canCreate = user?.role === "COMPANY_ADMIN" || user?.role === "JOB_SEEKER";
   const query = useQuery({
     queryFn: () => listVehicleMarketplaceListings(toApiFilters(appliedFilters)),
@@ -138,6 +147,7 @@ export function VehicleMarketplacePage() {
   };
   const clearFilters = () => {
     setDraftFilters(filtersFromParams(new URLSearchParams()));
+    setShowAdvancedFilters(false);
     setSearchParams(new URLSearchParams());
   };
 
@@ -145,6 +155,15 @@ export function VehicleMarketplacePage() {
   if (query.error) return <ErrorState description="Vehicle marketplace listings could not be loaded." error={query.error} title="Unable to load vehicle marketplace" />;
 
   const listings = query.data ?? [];
+  const advancedFilterCount = [
+    draftFilters.priceMin,
+    draftFilters.priceMax,
+    draftFilters.yearMin,
+    draftFilters.yearMax,
+    draftFilters.capacityMin,
+    draftFilters.refrigerated !== "ALL" ? draftFilters.refrigerated : "",
+    draftFilters.hazmatCertified !== "ALL" ? draftFilters.hazmatCertified : "",
+  ].filter(Boolean).length;
 
   return (
     <div className="space-y-6">
@@ -164,61 +183,64 @@ export function VehicleMarketplacePage() {
 
       <Surface>
         <form onSubmit={applyFilters}>
-        <div className="grid gap-4 lg:grid-cols-[1fr_10rem_10rem_10rem_8rem_10rem_auto] lg:items-end">
-          <Field label="Search">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden="true" />
-              <Input className="pl-9" onChange={(event) => updateFilter("q", event.target.value)} placeholder="Brand, model, city" value={draftFilters.q} />
-            </div>
-          </Field>
-          <Field label="Intent">
-            <Select onChange={(event) => updateFilter("intent", event.target.value)} value={draftFilters.intent}>
-              {intents.map((item) => <option key={item} value={item}>{item === "ALL" ? "All intents" : humanizeEnum(item)}</option>)}
-            </Select>
-          </Field>
-          <Field label="Vehicle">
-            <Select onChange={(event) => updateFilter("vehicleType", event.target.value)} value={draftFilters.vehicleType}>
-              {vehicleTypes.map((item) => <option key={item} value={item}>{item === "ALL" ? "All types" : humanizeEnum(item)}</option>)}
-            </Select>
-          </Field>
-          <Field label="Body">
-            <Select onChange={(event) => updateFilter("bodyType", event.target.value)} value={draftFilters.bodyType}>
-              {bodyTypes.map((item) => <option key={item} value={item}>{item === "ALL" ? "All bodies" : humanizeEnum(item)}</option>)}
-            </Select>
-          </Field>
-          <Field label="Country">
-            <Input maxLength={2} onChange={(event) => updateFilter("countryCode", event.target.value.toUpperCase())} placeholder="MK" value={draftFilters.countryCode} />
-          </Field>
-          <Field label="City">
-            <Input onChange={(event) => updateFilter("city", event.target.value)} placeholder="Skopje" value={draftFilters.city} />
-          </Field>
-          <Button type="submit">
-            <Filter className="size-4" aria-hidden="true" />
-            Apply
-          </Button>
-        </div>
-        <div className="mt-4 grid gap-4 lg:grid-cols-6">
-          <Field label="Price min"><Input inputMode="decimal" onChange={(event) => updateFilter("priceMin", event.target.value)} placeholder="5000" value={draftFilters.priceMin} /></Field>
-          <Field label="Price max"><Input inputMode="decimal" onChange={(event) => updateFilter("priceMax", event.target.value)} placeholder="50000" value={draftFilters.priceMax} /></Field>
-          <Field label="Year from"><Input inputMode="numeric" onChange={(event) => updateFilter("yearMin", event.target.value)} placeholder="2018" value={draftFilters.yearMin} /></Field>
-          <Field label="Year to"><Input inputMode="numeric" onChange={(event) => updateFilter("yearMax", event.target.value)} placeholder="2026" value={draftFilters.yearMax} /></Field>
-          <Field label="Capacity min"><Input inputMode="numeric" onChange={(event) => updateFilter("capacityMin", event.target.value)} placeholder="12000" value={draftFilters.capacityMin} /></Field>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-            <Field label="Refrigerated">
-              <Select onChange={(event) => updateFilter("refrigerated", event.target.value)} value={draftFilters.refrigerated}>
-                {yesNo.map((item) => <option key={item} value={item}>{item === "ALL" ? "Any" : item === "true" ? "Yes" : "No"}</option>)}
+          <div className="grid gap-3 lg:grid-cols-[minmax(14rem,1fr)_9rem_9rem_9rem_7rem_9rem_auto] lg:items-end">
+            <Field label="Search">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                <Input className="pl-9" onChange={(event) => updateFilter("q", event.target.value)} placeholder="Brand, model, city" value={draftFilters.q} />
+              </div>
+            </Field>
+            <Field label="Intent">
+              <Select onChange={(event) => updateFilter("intent", event.target.value)} value={draftFilters.intent}>
+                {intents.map((item) => <option key={item} value={item}>{item === "ALL" ? "All intents" : humanizeEnum(item)}</option>)}
               </Select>
             </Field>
-            <Field label="Hazmat">
-              <Select onChange={(event) => updateFilter("hazmatCertified", event.target.value)} value={draftFilters.hazmatCertified}>
-                {yesNo.map((item) => <option key={item} value={item}>{item === "ALL" ? "Any" : item === "true" ? "Yes" : "No"}</option>)}
+            <Field label="Vehicle">
+              <Select onChange={(event) => updateFilter("vehicleType", event.target.value)} value={draftFilters.vehicleType}>
+                {vehicleTypes.map((item) => <option key={item} value={item}>{item === "ALL" ? "All types" : humanizeEnum(item)}</option>)}
               </Select>
             </Field>
+            <Field label="Body">
+              <Select onChange={(event) => updateFilter("bodyType", event.target.value)} value={draftFilters.bodyType}>
+                {bodyTypes.map((item) => <option key={item} value={item}>{item === "ALL" ? "All bodies" : humanizeEnum(item)}</option>)}
+              </Select>
+            </Field>
+            <Field label="Country">
+              <Input maxLength={2} onChange={(event) => updateFilter("countryCode", event.target.value.toUpperCase())} placeholder="MK" value={draftFilters.countryCode} />
+            </Field>
+            <Field label="City">
+              <Input onChange={(event) => updateFilter("city", event.target.value)} placeholder="Skopje" value={draftFilters.city} />
+            </Field>
+            <Button type="submit">
+              <Filter className="size-4" aria-hidden="true" />
+              Apply
+            </Button>
           </div>
-        </div>
-        <div className="mt-4 flex justify-end">
-          <Button onClick={clearFilters} type="button" variant="secondary">Clear filters</Button>
-        </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+            <Button aria-expanded={showAdvancedFilters} onClick={() => setShowAdvancedFilters((current) => !current)} type="button" variant="secondary">
+              Advanced filters{advancedFilterCount ? ` (${advancedFilterCount})` : ""}
+            </Button>
+            <Button onClick={clearFilters} type="button" variant="secondary">Clear filters</Button>
+          </div>
+          {showAdvancedFilters ? (
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+              <Field label="Price min"><Input inputMode="decimal" onChange={(event) => updateFilter("priceMin", event.target.value)} placeholder="5000" value={draftFilters.priceMin} /></Field>
+              <Field label="Price max"><Input inputMode="decimal" onChange={(event) => updateFilter("priceMax", event.target.value)} placeholder="50000" value={draftFilters.priceMax} /></Field>
+              <Field label="Year from"><Input inputMode="numeric" onChange={(event) => updateFilter("yearMin", event.target.value)} placeholder="2018" value={draftFilters.yearMin} /></Field>
+              <Field label="Year to"><Input inputMode="numeric" onChange={(event) => updateFilter("yearMax", event.target.value)} placeholder="2026" value={draftFilters.yearMax} /></Field>
+              <Field label="Capacity min"><Input inputMode="numeric" onChange={(event) => updateFilter("capacityMin", event.target.value)} placeholder="12000" value={draftFilters.capacityMin} /></Field>
+              <Field label="Refrigerated">
+                <Select onChange={(event) => updateFilter("refrigerated", event.target.value)} value={draftFilters.refrigerated}>
+                  {yesNo.map((item) => <option key={item} value={item}>{item === "ALL" ? "Any" : item === "true" ? "Yes" : "No"}</option>)}
+                </Select>
+              </Field>
+              <Field label="Hazmat">
+                <Select onChange={(event) => updateFilter("hazmatCertified", event.target.value)} value={draftFilters.hazmatCertified}>
+                  {yesNo.map((item) => <option key={item} value={item}>{item === "ALL" ? "Any" : item === "true" ? "Yes" : "No"}</option>)}
+                </Select>
+              </Field>
+            </div>
+          ) : null}
         </form>
       </Surface>
 

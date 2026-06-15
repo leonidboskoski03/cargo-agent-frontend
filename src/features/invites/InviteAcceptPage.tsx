@@ -1,10 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, CheckCircle2, LogOut, Mail, ShieldCheck } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { acceptCompanyInvite } from "@/shared/api/modules/companyInvites";
+import { acceptCompanyInvite, previewCompanyInvite } from "@/shared/api/modules/companyInvites";
 import { logout, refreshSession, register, requestOtp, resendOtp, verifyOtp, type OtpChallengeResponse } from "@/shared/api/modules/auth";
 import { getMe } from "@/shared/api/modules/users";
 import { Button } from "@/shared/components/ui/Button";
@@ -13,6 +13,7 @@ import { OtpCodeInput } from "@/shared/components/ui/OtpCodeInput";
 import { ErrorState, LoadingState, Surface } from "@/shared/components/ui/Page";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { useAuthStore } from "@/features/auth/authStore";
+import { OtpResendButton } from "@/features/auth/OtpResendButton";
 import {
   inviteAcceptOtpSchema,
   inviteAcceptSchema,
@@ -54,6 +55,15 @@ export function InviteAcceptPage() {
   const setUser = useAuthStore((state) => state.setUser);
   const token = searchParams.get("token") ?? "";
   const tokenResult = useMemo(() => inviteAcceptSchema.safeParse({ token }), [token]);
+  const inviteToken = tokenResult.success ? tokenResult.data.token : null;
+  const invitePreviewQuery = useQuery({
+    enabled: Boolean(inviteToken),
+    queryFn: () => {
+      if (!inviteToken) throw new Error("Invite token is invalid.");
+      return previewCompanyInvite(inviteToken);
+    },
+    queryKey: ["company-invite-preview", token],
+  });
   const [challenge, setChallenge] = useState<OtpChallengeResponse | null>(null);
   const [accountChallenge, setAccountChallenge] = useState<OtpChallengeResponse | null>(null);
   const [accountDraft, setAccountDraft] = useState<InviteAccountSetupValues | null>(null);
@@ -64,26 +74,38 @@ export function InviteAcceptPage() {
     defaultValues: { email: "", firstName: "", lastName: "", password: "" },
   });
 
+  useEffect(() => {
+    if (invitePreviewQuery.data?.invitedEmail) {
+      accountForm.setValue("email", invitePreviewQuery.data.invitedEmail, { shouldDirty: false, shouldValidate: true });
+    }
+  }, [accountForm, invitePreviewQuery.data?.invitedEmail]);
+
   const accountOtpForm = useForm<InviteAccountOtpValues>({
     resolver: zodResolver(inviteAccountOtpSchema),
     defaultValues: { code: "" },
   });
-  const accountOtpCode = useWatch({ control: accountOtpForm.control, name: "code" });
+  const accountOtpCode = useWatch({ control: accountOtpForm.control, name: "code" }) ?? "";
+  const lastAutoSubmittedAccountOtpCode = useRef("");
 
   const otpForm = useForm<InviteAcceptOtpValues>({
     resolver: zodResolver(inviteAcceptOtpSchema),
     defaultValues: { code: "" },
   });
-  const inviteOtpCode = useWatch({ control: otpForm.control, name: "code" });
+  const inviteOtpCode = useWatch({ control: otpForm.control, name: "code" }) ?? "";
+  const lastAutoSubmittedInviteOtpCode = useRef("");
 
   const returnState = { from: { hash: location.hash, pathname: location.pathname, search: location.search } };
 
   const startAccountMutation = useAppMutation({
     messages: { success: "Account setup code sent" },
-    mutationFn: (values: InviteAccountSetupValues) =>
-      requestOtp({ channel: "EMAIL", email: values.email, purpose: "REGISTER_VERIFY" }),
+    mutationFn: (values: InviteAccountSetupValues) => {
+      const invitedEmail = invitePreviewQuery.data?.invitedEmail;
+      if (!invitedEmail) throw new Error("Invite preview is not loaded.");
+      if (values.email !== invitedEmail) throw new Error("Invite email cannot be changed.");
+      return requestOtp({ channel: "EMAIL", email: invitedEmail, purpose: "REGISTER_VERIFY" });
+    },
     onSuccess: (data, values) => {
-      setAccountDraft(values);
+      setAccountDraft({ ...values, email: invitePreviewQuery.data?.invitedEmail ?? values.email });
       setAccountChallenge(data);
       accountOtpForm.reset();
     },
@@ -112,6 +134,38 @@ export function InviteAcceptPage() {
       accountOtpForm.reset();
     },
   });
+
+  const resendAccountOtpMutation = useAppMutation({
+    messages: { success: "Account setup code resent" },
+    mutationFn: () => {
+      if (!accountChallenge) throw new Error("Account setup challenge is missing.");
+      return resendOtp({ challengeId: accountChallenge.challengeId });
+    },
+    onSuccess: (data) => {
+      setAccountChallenge(data);
+      accountOtpForm.reset();
+    },
+  });
+
+  useEffect(() => {
+    if (!accountChallenge || !accountDraft) {
+      lastAutoSubmittedAccountOtpCode.current = "";
+      return;
+    }
+
+    if (accountOtpCode.length < 6) {
+      lastAutoSubmittedAccountOtpCode.current = "";
+      return;
+    }
+
+    if (completeAccountMutation.isPending || lastAutoSubmittedAccountOtpCode.current === accountOtpCode) return;
+
+    const parsed = inviteAccountOtpSchema.safeParse({ code: accountOtpCode });
+    if (!parsed.success) return;
+
+    lastAutoSubmittedAccountOtpCode.current = accountOtpCode;
+    completeAccountMutation.mutate(parsed.data);
+  }, [accountChallenge, accountDraft, accountOtpCode, completeAccountMutation]);
 
   const requestOtpMutation = useAppMutation({
     messages: { success: "Invite verification code sent" },
@@ -157,6 +211,26 @@ export function InviteAcceptPage() {
     },
   });
 
+  useEffect(() => {
+    if (!challenge || step !== "otp") {
+      lastAutoSubmittedInviteOtpCode.current = "";
+      return;
+    }
+
+    if (inviteOtpCode.length < 6) {
+      lastAutoSubmittedInviteOtpCode.current = "";
+      return;
+    }
+
+    if (acceptMutation.isPending || lastAutoSubmittedInviteOtpCode.current === inviteOtpCode) return;
+
+    const parsed = inviteAcceptOtpSchema.safeParse({ code: inviteOtpCode });
+    if (!parsed.success) return;
+
+    lastAutoSubmittedInviteOtpCode.current = inviteOtpCode;
+    acceptMutation.mutate(parsed.data);
+  }, [acceptMutation, challenge, inviteOtpCode, step]);
+
   const switchAccountMutation = useAppMutation({
     mutationFn: logout,
     onSuccess: () => {
@@ -186,6 +260,7 @@ export function InviteAcceptPage() {
 
   const acceptError = acceptMutation.error ? toApiClientError(acceptMutation.error) : null;
   const isEmailMismatch = acceptError?.code === "INVITE_EMAIL_MISMATCH" || acceptError?.code === "USER_ALREADY_IN_ANOTHER_COMPANY";
+  const invitePreview = invitePreviewQuery.data;
 
   return (
     <main className="min-h-dvh bg-background px-4 py-8">
@@ -208,20 +283,36 @@ export function InviteAcceptPage() {
 
         <section className="flex items-center">
           <Surface className="w-full rounded-[24px] p-6 md:p-8">
-            {!user ? (
+            {invitePreviewQuery.isLoading ? (
+              <LoadingState description="Reading the invite before account setup." title="Loading invite" />
+            ) : invitePreviewQuery.error ? (
+              <ErrorState
+                action={<Link className="text-sm font-semibold text-primary" to="/login">Go to login</Link>}
+                description="This invite could not be loaded. Ask your company admin for a fresh invite."
+                error={invitePreviewQuery.error}
+                title="Unable to load invite"
+              />
+            ) : !user ? (
               <div>
                 <div className="grid size-12 place-items-center rounded-lg bg-surface-pearl">
                   <ShieldCheck aria-hidden="true" className="size-5 text-primary" />
                 </div>
                 <h2 className="mt-5 text-3xl font-semibold tracking-[-0.28px]">Set up your invited account</h2>
                 <p className="mt-2 text-sm leading-6 text-muted">
-                  Create your password with the email that received this invite. You will stay here and accept the company invite after email verification.
+                  Create your password for the email that received this invite. You will stay here and accept the company invite after email verification.
                 </p>
+                {invitePreview ? (
+                  <div className="mt-5 rounded-xl bg-surface-pearl p-4">
+                    <p className="text-xs font-semibold uppercase text-muted">Invite target</p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">{invitePreview.company.name}</p>
+                    <p className="mt-1 text-sm text-muted">{invitePreview.invitedEmail} / {invitePreview.targetRole.replace("_", " ")}</p>
+                  </div>
+                ) : null}
 
                 {!accountChallenge ? (
                   <form className="mt-6 space-y-4" onSubmit={accountForm.handleSubmit((values) => startAccountMutation.mutate(values))}>
                     <Field error={accountForm.formState.errors.email} label="Invited email" required>
-                      <Input {...accountForm.register("email")} autoComplete="email" type="email" />
+                      <Input {...accountForm.register("email")} autoComplete="email" readOnly type="email" />
                     </Field>
                     <div className="grid gap-4 md:grid-cols-2">
                       <Field error={accountForm.formState.errors.firstName} label="First name" required>
@@ -234,7 +325,7 @@ export function InviteAcceptPage() {
                     <Field error={accountForm.formState.errors.password} label="Password" required>
                       <Input {...accountForm.register("password")} autoComplete="new-password" type="password" />
                     </Field>
-                    <Button disabled={startAccountMutation.isPending} type="submit">
+                    <Button disabled={startAccountMutation.isPending || !invitePreview} type="submit">
                       Send account setup code
                       <ArrowRight aria-hidden="true" className="size-4" />
                     </Button>
@@ -248,18 +339,22 @@ export function InviteAcceptPage() {
                     <Field error={accountOtpForm.formState.errors.code} label="Account setup OTP" required>
                       <OtpCodeInput
                         autoFocus
-                        disabled={completeAccountMutation.isPending}
+                        disabled={completeAccountMutation.isPending || resendAccountOtpMutation.isPending}
                         onChange={(code) => accountOtpForm.setValue("code", code, { shouldDirty: true, shouldValidate: true })}
                         value={accountOtpCode}
                       />
                     </Field>
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <Button disabled={completeAccountMutation.isPending} type="submit">
-                        Create account
+                        Verify code
                       </Button>
-                      <Button disabled={completeAccountMutation.isPending} onClick={() => setAccountChallenge(null)} type="button" variant="secondary">
-                        Edit details
-                      </Button>
+                      <OtpResendButton
+                        attemptsRemaining={accountChallenge.resendAttemptsRemaining}
+                        disabled={completeAccountMutation.isPending}
+                        isPending={resendAccountOtpMutation.isPending}
+                        nextResendAt={accountChallenge.nextResendAt}
+                        onResend={() => resendAccountOtpMutation.mutate()}
+                      />
                     </div>
                   </form>
                 )}
@@ -278,7 +373,9 @@ export function InviteAcceptPage() {
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-normal text-primary">Signed in as</p>
                     <h2 className="mt-2 text-3xl font-semibold tracking-[-0.28px]">{user.email}</h2>
-                    <p className="mt-2 text-sm leading-6 text-muted">Invite acceptance uses this account email. Preview tokens and OTP codes stay hidden.</p>
+                    <p className="mt-2 text-sm leading-6 text-muted">
+                      Invite acceptance uses this account email{invitePreview ? ` and is locked to ${invitePreview.invitedEmail}` : ""}.
+                    </p>
                   </div>
                   <Button disabled={switchAccountMutation.isPending} onClick={() => switchAccountMutation.mutate()} type="button" variant="secondary">
                     <LogOut aria-hidden="true" className="size-4" />
@@ -323,7 +420,7 @@ export function InviteAcceptPage() {
                     <Field error={otpForm.formState.errors.code} label="OTP code" required>
                       <OtpCodeInput
                         autoFocus
-                        disabled={acceptMutation.isPending}
+                        disabled={acceptMutation.isPending || resendOtpMutation.isPending}
                         onChange={(code) => otpForm.setValue("code", code, { shouldDirty: true, shouldValidate: true })}
                         value={inviteOtpCode}
                       />
@@ -333,9 +430,13 @@ export function InviteAcceptPage() {
                         Accept invite
                         <ArrowRight aria-hidden="true" className="size-4" />
                       </Button>
-                      <Button disabled={resendOtpMutation.isPending || acceptMutation.isPending} onClick={() => resendOtpMutation.mutate()} type="button" variant="secondary">
-                        Resend code
-                      </Button>
+                      <OtpResendButton
+                        attemptsRemaining={challenge.resendAttemptsRemaining}
+                        disabled={acceptMutation.isPending}
+                        isPending={resendOtpMutation.isPending}
+                        nextResendAt={challenge.nextResendAt}
+                        onResend={() => resendOtpMutation.mutate()}
+                      />
                     </div>
                   </form>
                 )}

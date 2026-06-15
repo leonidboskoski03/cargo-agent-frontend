@@ -35,7 +35,12 @@ export type LicenseTypeOption = {
   label: string;
 };
 
-export function listLicenses(params?: { userId?: string }) {
+export type LicenseListParams = {
+  deleted?: "active" | "only" | "include";
+  userId?: string;
+};
+
+export function listLicenses(params?: LicenseListParams) {
   return unwrapData<LicenseRecord[]>(apiClient.get("/licenses", { params }));
 }
 

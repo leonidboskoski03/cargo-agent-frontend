@@ -35,6 +35,16 @@ const jobSeekerUser = {
   role: "JOB_SEEKER" as const,
 };
 
+const companyAdminUser = {
+  companyId: "company_1",
+  email: "admin@cargo.test",
+  firstName: "Ada",
+  id: "company_admin",
+  isActive: true,
+  lastName: "Admin",
+  role: "COMPANY_ADMIN" as const,
+};
+
 function renderPage(scope: "feed" | "mine" = "feed") {
   return render(
     <QueryClientProvider client={new QueryClient()}>
@@ -105,53 +115,56 @@ describe("JobsPage", () => {
     expect(screen.getByText("Closed listing")).toBeInTheDocument();
   });
 
-  it("shows owner edit, status, delete, and restore controls on my listings", async () => {
+  it("splits active and deleted owner controls on my listings", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    jobApi.listMyJobApplications.mockResolvedValue([
-      {
-        createdAt: "",
-        createdByCompany: null,
-        createdByCompanyId: null,
-        createdByUserId: jobSeekerUser.id,
-        currency: "EUR",
-        deletedAt: null,
-        description: "Available for refrigerated routes.",
-        expectedPayAmount: 1600,
-        id: "job_owned",
-        isPromoted: false,
-        preferredCity: "Prilep",
-        preferredCountryCode: "MK",
-        promotedUntil: null,
-        status: "OPEN",
-        title: "Owner listing",
-        updatedAt: "",
-      },
-      {
-        createdAt: "",
-        createdByCompany: null,
-        createdByCompanyId: null,
-        createdByUserId: jobSeekerUser.id,
-        currency: "EUR",
-        deletedAt: "2026-06-08T00:00:00.000Z",
-        description: "Old listing.",
-        expectedPayAmount: null,
-        id: "job_deleted",
-        isPromoted: false,
-        preferredCity: null,
-        preferredCountryCode: null,
-        promotedUntil: null,
-        status: "CLOSED",
-        title: "Deleted listing",
-        updatedAt: "",
-      },
-    ]);
+    const activeJob = {
+      createdAt: "",
+      createdByCompany: null,
+      createdByCompanyId: null,
+      createdByUserId: jobSeekerUser.id,
+      currency: "EUR",
+      deletedAt: null,
+      description: "Available for refrigerated routes.",
+      expectedPayAmount: 1600,
+      id: "job_owned",
+      isPromoted: false,
+      preferredCity: "Prilep",
+      preferredCountryCode: "MK",
+      promotedUntil: null,
+      status: "OPEN",
+      title: "Owner listing",
+      updatedAt: "",
+    };
+    const deletedJob = {
+      createdAt: "",
+      createdByCompany: null,
+      createdByCompanyId: null,
+      createdByUserId: jobSeekerUser.id,
+      currency: "EUR",
+      deletedAt: "2026-06-08T00:00:00.000Z",
+      description: "Old listing.",
+      expectedPayAmount: null,
+      id: "job_deleted",
+      isPromoted: false,
+      preferredCity: null,
+      preferredCountryCode: null,
+      promotedUntil: null,
+      status: "CLOSED",
+      title: "Deleted listing",
+      updatedAt: "",
+    };
+    jobApi.listMyJobApplications.mockImplementation((params) =>
+      Promise.resolve(params?.deleted === "only" ? [deletedJob] : [activeJob]),
+    );
 
     renderPage("mine");
 
     expect(await screen.findByText("Owner listing")).toBeInTheDocument();
+    expect(jobApi.listMyJobApplications).toHaveBeenCalledWith({ deleted: "active" });
+    expect(screen.queryByText("Deleted listing")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /edit owner listing/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /delete owner listing/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /restore deleted listing/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /restore deleted listing/i })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /edit owner listing/i }));
     await userEvent.clear(screen.getByLabelText("Edit job title"));
@@ -163,7 +176,24 @@ describe("JobsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: /delete owner listing/i }));
     expect(jobApi.deleteJobApplication.mock.calls.at(-1)?.[0]).toBe("job_owned");
 
+    await userEvent.click(screen.getByRole("button", { name: /^deleted$/i }));
+
+    expect(await screen.findByText("Deleted listing")).toBeInTheDocument();
+    expect(jobApi.listMyJobApplications).toHaveBeenCalledWith({ deleted: "only" });
+    expect(screen.queryByText("Owner listing")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /edit deleted listing/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /delete deleted listing/i })).not.toBeInTheDocument();
+
     await userEvent.click(screen.getByRole("button", { name: /restore deleted listing/i }));
     expect(jobApi.restoreJobApplication.mock.calls.at(-1)?.[0]).toBe("job_deleted");
+  });
+
+  it("lets company admins navigate to create company job posts", async () => {
+    useAuthStore.setState({ status: "authenticated", user: companyAdminUser });
+    jobApi.listJobApplications.mockResolvedValue([]);
+
+    renderPage();
+
+    expect(await screen.findByRole("link", { name: /create job post/i })).toHaveAttribute("href", "/jobs/new");
   });
 });

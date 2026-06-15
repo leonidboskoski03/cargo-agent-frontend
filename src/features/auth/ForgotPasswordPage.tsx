@@ -3,17 +3,21 @@ import { ArrowLeft, CheckCircle2, KeyRound, Mail } from "lucide-react";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
-import { forgotPassword, resetPassword, verifyOtp } from "@/shared/api/modules/auth";
+import { forgotPassword, resendOtp, resetPassword, verifyOtp } from "@/shared/api/modules/auth";
 import { Button } from "@/shared/components/ui/Button";
 import { Field, Input } from "@/shared/components/ui/Form";
 import { OtpCodeInput } from "@/shared/components/ui/OtpCodeInput";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { forgotPasswordEmailSchema, forgotPasswordResetSchema, type ForgotPasswordEmailValues, type ForgotPasswordResetValues } from "./authSchemas";
+import { OtpResendButton } from "./OtpResendButton";
 
 type ResetState = {
   challengeId: string;
   email: string;
+  expiresAt?: string;
+  nextResendAt?: string;
   previewCode?: string;
+  resendAttemptsRemaining?: number;
 };
 
 export function ForgotPasswordPage() {
@@ -37,7 +41,14 @@ export function ForgotPasswordPage() {
     mutationFn: forgotPassword,
     onSuccess: (data, values) => {
       if (data.challengeId) {
-        setResetState({ challengeId: data.challengeId, email: values.email, previewCode: data.code });
+        setResetState({
+          challengeId: data.challengeId,
+          email: values.email,
+          expiresAt: data.expiresAt,
+          nextResendAt: data.nextResendAt,
+          previewCode: data.code,
+          resendAttemptsRemaining: data.resendAttemptsRemaining,
+        });
       }
     },
   });
@@ -52,6 +63,29 @@ export function ForgotPasswordPage() {
     onSuccess: () => {
       setCompleted(true);
       resetForm.reset();
+    },
+  });
+
+  const resendMutation = useAppMutation({
+    messages: { success: "Reset code resent" },
+    mutationFn: () => {
+      if (!resetState) throw new Error("Password reset challenge is missing.");
+      return resendOtp({ challengeId: resetState.challengeId });
+    },
+    onSuccess: (data) => {
+      setResetState((current) =>
+        current
+          ? {
+              ...current,
+              challengeId: data.challengeId,
+              expiresAt: data.expiresAt,
+              nextResendAt: data.nextResendAt,
+              previewCode: data.code,
+              resendAttemptsRemaining: data.resendAttemptsRemaining,
+            }
+          : current,
+      );
+      resetForm.setValue("code", "", { shouldDirty: false, shouldValidate: false });
     },
   });
 
@@ -99,7 +133,7 @@ export function ForgotPasswordPage() {
                 <Field error={resetForm.formState.errors.code} label="OTP code" required>
                   <OtpCodeInput
                     autoFocus
-                    disabled={resetMutation.isPending}
+                    disabled={resetMutation.isPending || resendMutation.isPending}
                     onChange={(code) => resetForm.setValue("code", code, { shouldDirty: true, shouldValidate: true })}
                     value={resetCode}
                   />
@@ -114,9 +148,18 @@ export function ForgotPasswordPage() {
               <Button className="mt-6 w-full" disabled={resetMutation.isPending} type="submit">
                 Reset password
               </Button>
-              <Button className="mt-3 w-full" onClick={() => setResetState(null)} type="button" variant="secondary">
-                Use a different email
-              </Button>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <OtpResendButton
+                  attemptsRemaining={resetState.resendAttemptsRemaining}
+                  disabled={resetMutation.isPending}
+                  isPending={resendMutation.isPending}
+                  nextResendAt={resetState.nextResendAt}
+                  onResend={() => resendMutation.mutate()}
+                />
+                <Button className="w-full" onClick={() => setResetState(null)} type="button" variant="secondary">
+                  Use different email
+                </Button>
+              </div>
             </form>
           ) : (
             <form onSubmit={emailForm.handleSubmit((values) => requestMutation.mutate(values))}>

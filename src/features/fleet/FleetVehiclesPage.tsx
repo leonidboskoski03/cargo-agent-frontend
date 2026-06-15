@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { RotateCcw, Save, Trash2, Truck } from "lucide-react";
+import { Pencil, RotateCcw, Save, Trash2, Truck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { uploadDocument } from "@/shared/api/modules/documents";
@@ -11,6 +11,7 @@ import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
 import { FileUploadControl } from "@/shared/components/ui/FileUploadControl";
 import { Checkbox, Field, Input, Select } from "@/shared/components/ui/Form";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
+import { Tooltip } from "@/shared/components/ui/Tooltip";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { fileToBase64 } from "@/shared/lib/files";
 import { useAuthStore } from "@/features/auth/authStore";
@@ -59,7 +60,11 @@ export function FleetVehiclesPage() {
   const canManage = canManageFleet(user?.role);
   const [editing, setEditing] = useState<VehicleRecord | null>(null);
   const [deleted, setDeleted] = useState<VehicleRecord | null>(null);
-  const vehiclesQuery = useQuery({ queryFn: listVehicles, queryKey: ["vehicles"] });
+  const [registryView, setRegistryView] = useState<"active" | "deleted">("active");
+  const vehiclesQuery = useQuery({
+    queryFn: () => listVehicles({ deleted: registryView === "deleted" ? "only" : "active" }),
+    queryKey: ["vehicles", registryView],
+  });
   const countriesQuery = useQuery({ queryFn: listSupportedCountries, queryKey: ["geo", "countries"], staleTime: 1000 * 60 * 30 });
   const vehicles = vehiclesQuery.data ?? [];
   const form = useForm<VehicleFormInput, unknown, VehicleFormValues>({
@@ -111,6 +116,7 @@ export function FleetVehiclesPage() {
 
   if (vehiclesQuery.isLoading) return <LoadingState description="Loading company vehicles." title="Loading vehicles" />;
   if (vehiclesQuery.error) return <ErrorState description="Vehicle data could not be loaded." error={vehiclesQuery.error} title="Unable to load vehicles" />;
+  const isDeletedView = registryView === "deleted";
 
   return (
     <div className="space-y-6">
@@ -132,61 +138,77 @@ export function FleetVehiclesPage() {
             <form className="space-y-4" onSubmit={form.handleSubmit((values) => editing ? updateMutation.mutate(values) : createMutation.mutate(values))}>
               <div>
                 <h2 className="text-2xl font-semibold tracking-[-0.28px]">{editing ? "Edit vehicle" : "Add vehicle"}</h2>
-                <p className="mt-1 text-sm leading-6 text-muted">Keep the form compact; deeper documents come later.</p>
+                <p className="mt-1 text-sm leading-6 text-muted">Register the asset, then attach media with uploads instead of raw links.</p>
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field error={form.formState.errors.vehicleType?.message} label="Type" required>
-                  <Select {...form.register("vehicleType")}>
-                    <option value="TRUCK">Truck</option>
-                    <option value="TRAILER">Trailer</option>
-                    <option value="VAN">Van</option>
-                  </Select>
-                </Field>
-                <Field error={form.formState.errors.bodyType?.message} label="Body type">
-                  <Select {...form.register("bodyType")}>
-                    <option value="">Not set</option>
-                    <option value="TILT">Tilt</option>
-                    <option value="BOX">Box</option>
-                    <option value="FLATBED">Flatbed</option>
-                    <option value="REEFER">Reefer</option>
-                    <option value="TANKER">Tanker</option>
-                  </Select>
-                </Field>
-              </div>
-              <div className="grid gap-4 md:grid-cols-[0.65fr_0.35fr]">
-                <Field error={form.formState.errors.plateNumber?.message} label="Plate number" required>
-                  <Input {...form.register("plateNumber")} />
-                </Field>
-                <Field error={form.formState.errors.countryOfRegistration?.message} label="Country" required>
-                  <Select {...form.register("countryOfRegistration")}>
-                    <option value="">Select</option>
-                    {(countriesQuery.data ?? []).map((country) => <option key={country.code} value={country.code}>{country.code}</option>)}
-                  </Select>
-                </Field>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field error={form.formState.errors.brand?.message} label="Brand">
-                  <Input {...form.register("brand")} />
-                </Field>
-                <Field error={form.formState.errors.model?.message} label="Model">
-                  <Input {...form.register("model")} />
-                </Field>
-              </div>
-              <div className="grid gap-4 md:grid-cols-3">
-                <Field error={form.formState.errors.year?.message} label="Year">
-                  <Input {...form.register("year")} inputMode="numeric" type="number" />
-                </Field>
-                <Field error={form.formState.errors.capacityKg?.message} label="Capacity kg">
-                  <Input {...form.register("capacityKg")} inputMode="numeric" type="number" />
-                </Field>
-                <Field error={form.formState.errors.volumeM3?.message} label="Volume m3">
-                  <Input {...form.register("volumeM3")} inputMode="decimal" type="number" />
-                </Field>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field error={form.formState.errors.imageUrl?.message} label="Truck image URL">
-                  <div className="space-y-2">
-                    <Input {...form.register("imageUrl")} placeholder="https://.../truck.jpg" type="url" />
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold uppercase text-muted">Identity</h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field error={form.formState.errors.vehicleType?.message} label="Type" required>
+                    <Select {...form.register("vehicleType")}>
+                      <option value="TRUCK">Truck</option>
+                      <option value="TRAILER">Trailer</option>
+                      <option value="VAN">Van</option>
+                    </Select>
+                  </Field>
+                  <Field error={form.formState.errors.bodyType?.message} label="Body type">
+                    <Select {...form.register("bodyType")}>
+                      <option value="">Not set</option>
+                      <option value="TILT">Tilt</option>
+                      <option value="BOX">Box</option>
+                      <option value="FLATBED">Flatbed</option>
+                      <option value="REEFER">Reefer</option>
+                      <option value="TANKER">Tanker</option>
+                    </Select>
+                  </Field>
+                </div>
+                <div className="grid gap-4 md:grid-cols-[0.65fr_0.35fr]">
+                  <Field error={form.formState.errors.plateNumber?.message} label="Plate number" required>
+                    <Input {...form.register("plateNumber")} />
+                  </Field>
+                  <Field error={form.formState.errors.countryOfRegistration?.message} label="Country" required>
+                    <Select {...form.register("countryOfRegistration")}>
+                      <option value="">Select</option>
+                      {(countriesQuery.data ?? []).map((country) => <option key={country.code} value={country.code}>{country.code}</option>)}
+                    </Select>
+                  </Field>
+                </div>
+              </section>
+              <section className="space-y-3 border-t border-border pt-4">
+                <h3 className="text-sm font-semibold uppercase text-muted">Specs</h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field error={form.formState.errors.brand?.message} label="Brand">
+                    <Input {...form.register("brand")} />
+                  </Field>
+                  <Field error={form.formState.errors.model?.message} label="Model">
+                    <Input {...form.register("model")} />
+                  </Field>
+                </div>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <Field error={form.formState.errors.year?.message} label="Year">
+                    <Input {...form.register("year")} inputMode="numeric" type="number" />
+                  </Field>
+                  <Field error={form.formState.errors.capacityKg?.message} label="Capacity kg">
+                    <Input {...form.register("capacityKg")} inputMode="numeric" type="number" />
+                  </Field>
+                  <Field error={form.formState.errors.volumeM3?.message} label="Volume m3">
+                    <Input {...form.register("volumeM3")} inputMode="decimal" type="number" />
+                  </Field>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Checkbox {...form.register("refrigerated")}>Refrigerated</Checkbox>
+                  <Checkbox {...form.register("hazmatCertified")}>Hazmat</Checkbox>
+                  <Checkbox {...form.register("isActive")}>Active</Checkbox>
+                </div>
+              </section>
+              <section className="space-y-3 border-t border-border pt-4">
+                <div>
+                  <h3 className="text-sm font-semibold uppercase text-muted">Media and documents</h3>
+                  <p className="mt-1 text-sm text-muted">Upload a vehicle photo or operating document; the saved file link is kept behind the form.</p>
+                </div>
+                <input type="hidden" {...form.register("imageUrl")} />
+                <input type="hidden" {...form.register("documentsJson")} />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field error={form.formState.errors.imageUrl?.message} label="Vehicle photo">
                     <FileUploadControl
                       accept="image/jpeg,image/png,image/webp"
                       disabled={vehicleImageUpload.isPending}
@@ -197,11 +219,8 @@ export function FleetVehiclesPage() {
                       previewUrl={imageUrl}
                       value={imageUrl}
                     />
-                  </div>
-                </Field>
-                <Field error={form.formState.errors.documentsJson?.message} label="Truck documents">
-                  <div className="space-y-2">
-                    <Input {...form.register("documentsJson")} placeholder="Inspection, insurance, service document URLs" />
+                  </Field>
+                  <Field error={form.formState.errors.documentsJson?.message} label="Vehicle documents">
                     <FileUploadControl
                       accept="application/pdf,image/jpeg,image/png,image/webp"
                       disabled={vehicleDocumentUpload.isPending}
@@ -210,14 +229,9 @@ export function FleetVehiclesPage() {
                       onFileSelect={(file) => vehicleDocumentUpload.mutate(file)}
                       value={documentsJson}
                     />
-                  </div>
-                </Field>
-              </div>
-              <div className="grid gap-3 rounded-xl bg-surface-pearl p-4 sm:grid-cols-3">
-                <Checkbox {...form.register("refrigerated")}>Refrigerated</Checkbox>
-                <Checkbox {...form.register("hazmatCertified")}>Hazmat</Checkbox>
-                <Checkbox {...form.register("isActive")}>Active</Checkbox>
-              </div>
+                  </Field>
+                </div>
+              </section>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button disabled={createMutation.isPending || updateMutation.isPending} type="submit">
                   <Save aria-hidden="true" className="size-4" />
@@ -236,11 +250,42 @@ export function FleetVehiclesPage() {
         )}
 
         <Surface>
-          <h2 className="text-2xl font-semibold tracking-[-0.28px]">Vehicle registry</h2>
-          <p className="mt-1 text-sm leading-6 text-muted">Showing active, non-deleted vehicles returned by the backend.</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-[-0.28px]">Vehicle registry</h2>
+              <p className="mt-1 text-sm leading-6 text-muted">
+                {isDeletedView ? "Restore deleted fleet records from this dedicated view." : "Showing active, non-deleted vehicles returned by the backend."}
+              </p>
+            </div>
+            {canManage ? (
+              <div className="inline-flex w-fit rounded-lg border border-border bg-surface-pearl p-1" aria-label="Fleet vehicle registry view">
+                <Button
+                  aria-pressed={!isDeletedView}
+                  className="min-h-8 px-3 py-1 text-sm"
+                  onClick={() => setRegistryView("active")}
+                  type="button"
+                  variant={!isDeletedView ? "secondary" : "ghost"}
+                >
+                  Active
+                </Button>
+                <Button
+                  aria-pressed={isDeletedView}
+                  className="min-h-8 px-3 py-1 text-sm"
+                  onClick={() => setRegistryView("deleted")}
+                  type="button"
+                  variant={isDeletedView ? "secondary" : "ghost"}
+                >
+                  Deleted
+                </Button>
+              </div>
+            ) : null}
+          </div>
           <div className="mt-5">
             {vehicles.length === 0 ? (
-              <EmptyState description="Add a company vehicle to start assigning drivers." title="No vehicles yet" />
+              <EmptyState
+                description={isDeletedView ? "Deleted fleet vehicles will appear here after admins remove them from the active registry." : "Add a company vehicle to start assigning drivers."}
+                title={isDeletedView ? "No deleted vehicles" : "No vehicles yet"}
+              />
             ) : (
               <Table>
                 <thead><tr><Th>Vehicle</Th><Th>Capabilities</Th><Th>Status</Th><Th>Actions</Th></tr></thead>
@@ -255,12 +300,40 @@ export function FleetVehiclesPage() {
                         <p>{[vehicle.bodyType, vehicle.capacityKg ? `${vehicle.capacityKg} kg` : null, vehicle.volumeM3 ? `${vehicle.volumeM3} m3` : null, vehicle.refrigerated ? "Refrigerated" : null, vehicle.hazmatCertified ? "Hazmat" : null].filter(Boolean).join(" - ") || "No capabilities"}</p>
                         <p className="mt-1 text-xs text-muted">{[vehicle.imageUrl ? "Image added" : null, vehicle.documentsJson ? "Documents noted" : null].filter(Boolean).join(" - ") || "No media"}</p>
                       </Td>
-                      <Td><StatusBadge tone={vehicle.isActive ? "success" : "warning"}>{vehicle.isActive ? "Active" : "Inactive"}</StatusBadge></Td>
+                      <Td><StatusBadge tone={isDeletedView ? "danger" : vehicle.isActive ? "success" : "warning"}>{isDeletedView ? "Deleted" : vehicle.isActive ? "Active" : "Inactive"}</StatusBadge></Td>
                       <Td>
                         {canManage ? (
                           <div className="flex flex-wrap gap-2">
-                            <Button className="h-9 min-h-9 px-4" onClick={() => setEditing(vehicle)} type="button" variant="secondary">Edit</Button>
-                            <Button className="h-9 min-h-9 px-4" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(vehicle.id)} type="button" variant="danger"><Trash2 aria-hidden="true" className="size-4" />Delete</Button>
+                            {isDeletedView ? (
+                              <Tooltip label="Restore vehicle">
+                                <Button
+                                  aria-label={`Restore ${vehicle.plateNumber}`}
+                                  className="h-9 min-h-9 px-3"
+                                  disabled={restoreMutation.isPending}
+                                  onClick={() => restoreMutation.mutate(vehicle.id)}
+                                  type="button"
+                                  variant="secondary"
+                                >
+                                  <RotateCcw aria-hidden="true" className="size-4" />
+                                  Restore
+                                </Button>
+                              </Tooltip>
+                            ) : (
+                              <>
+                                <Tooltip label="Edit vehicle">
+                                  <Button aria-label={`Edit ${vehicle.plateNumber}`} className="h-9 min-h-9 px-3" onClick={() => setEditing(vehicle)} type="button" variant="secondary">
+                                    <Pencil aria-hidden="true" className="size-4" />
+                                    Edit
+                                  </Button>
+                                </Tooltip>
+                                <Tooltip label="Delete vehicle">
+                                  <Button aria-label={`Delete ${vehicle.plateNumber}`} className="h-9 min-h-9 px-3" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(vehicle.id)} type="button" variant="danger">
+                                    <Trash2 aria-hidden="true" className="size-4" />
+                                    Delete
+                                  </Button>
+                                </Tooltip>
+                              </>
+                            )}
                           </div>
                         ) : <span className="text-sm text-muted">Read only</span>}
                       </Td>

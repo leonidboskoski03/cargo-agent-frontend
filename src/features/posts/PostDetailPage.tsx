@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Building2, Clock, MapPin, Package, Pencil, Rocket, Send, ShieldCheck, Truck } from "lucide-react";
 import { Fragment, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { boostBid, changeBidStatus, createBid, deleteBid, listBids, restoreBid, updateBid, type BidRecord, type BidStatus } from "@/shared/api/modules/bids";
 import { listContracts } from "@/shared/api/modules/contracts";
@@ -28,6 +28,7 @@ function bidTone(status: string) {
 }
 
 function postTone(status: string) {
+  if (status === "DRAFT" || status === "ARCHIVED") return "neutral";
   if (status === "OPEN") return "success";
   if (status === "ASSIGNED") return "warning";
   if (status === "CANCELLED" || status === "EXPIRED") return "danger";
@@ -72,6 +73,7 @@ function isBidBoosted(bid: BidRecord) {
 
 export function PostDetailPage() {
   const { postId = "" } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
@@ -97,6 +99,8 @@ export function PostDetailPage() {
   const acceptedBids = bids.filter((bid) => bid.status === "ACCEPTED" && bid.offeredPriceAmount);
   const pendingBids = bids.filter((bid) => bid.status === "PENDING");
   const canCreateBid = Boolean(post && isAdmin && user?.companyId && user.companyId !== post.companyId && post.status === "OPEN");
+  const canEditPost = Boolean(post && canEditCompanyPost({ ownsPost, role: user?.role, status: post.status }));
+  const isEditRoute = location.pathname.endsWith("/edit");
 
   const form = useForm<BidFormInput, unknown, BidFormValues>({
     resolver: zodResolver(bidSchema),
@@ -200,7 +204,7 @@ export function PostDetailPage() {
 
   const postStatusMutation = useAppMutation({
     messages: { success: "Post status updated" },
-    mutationFn: ({ status }: { status: "CANCELLED" }) => changePostStatus(postId, status),
+    mutationFn: ({ status }: { status: "ARCHIVED" | "DRAFT" | "OPEN" }) => changePostStatus(postId, status),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["posts", postId] });
       void queryClient.invalidateQueries({ queryKey: ["posts"] });
@@ -295,6 +299,83 @@ export function PostDetailPage() {
     return <EmptyState description="The post could not be loaded or is no longer available." title="Post not found" />;
   }
 
+  const editPostForm = (
+    <Surface>
+      <form className="grid gap-4 lg:grid-cols-3" onSubmit={postForm.handleSubmit((values) => updatePostMutation.mutate(values))}>
+        <div className="lg:col-span-3">
+          <h2 className="text-2xl font-semibold tracking-[-0.28px]">Edit post</h2>
+          <p className="mt-1 text-sm leading-6 text-muted">Draft, open, and archived posts can be adjusted before assignment.</p>
+        </div>
+        <Field error={postForm.formState.errors.routeId} label="Route" required>
+          <Select {...postForm.register("routeId")}>
+            <option value="">Select route</option>
+            {routes.map((route) => (
+              <option key={route.id} value={route.id}>
+                {route.originLocation.city} {"->"} {route.destinationLocation.city}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field error={postForm.formState.errors.title} label="Title">
+          <Input {...postForm.register("title")} />
+        </Field>
+        <Field error={postForm.formState.errors.priceType} label="Price type" required>
+          <Select {...postForm.register("priceType")}>
+            <option value="REQUEST_QUOTE">Request quote</option>
+            <option value="FIXED">Fixed</option>
+            <option value="NEGOTIABLE">Negotiable</option>
+          </Select>
+        </Field>
+        <Field error={postForm.formState.errors.currency} label="Currency" required>
+          <Input {...postForm.register("currency")} />
+        </Field>
+        <Field error={postForm.formState.errors.priceAmount} label="Price amount">
+          <Input {...postForm.register("priceAmount")} inputMode="decimal" />
+        </Field>
+        <Field error={postForm.formState.errors.weightKg} label="Weight kg">
+          <Input {...postForm.register("weightKg")} inputMode="numeric" type="number" />
+        </Field>
+        <div className="lg:col-span-3">
+          <Field error={postForm.formState.errors.cargoDescription} label="Cargo description">
+            <Textarea {...postForm.register("cargoDescription")} />
+          </Field>
+        </div>
+        <div className="flex flex-wrap gap-2 lg:col-span-3">
+          <Button disabled={updatePostMutation.isPending} type="submit">
+            <Pencil className="size-4" />
+            Save changes
+          </Button>
+          <Link className="inline-flex min-h-10 items-center justify-center rounded-lg bg-transparent px-4 py-2 text-sm font-normal text-primary transition hover:bg-surface-pearl" to={`/posts/${post.id}`}>
+            Back to detail
+          </Link>
+        </div>
+      </form>
+    </Surface>
+  );
+
+  if (isEditRoute) {
+    return (
+      <div className="space-y-6">
+        <Link className="inline-flex items-center gap-2 text-sm text-primary" to={`/posts/${post.id}`}>
+          <ArrowLeft className="size-4" />
+          Back to post
+        </Link>
+        <PageHeader
+          eyebrow="Transport post"
+          subtitle="Edit the post in a focused workspace instead of beneath the bid table."
+          title={`Edit ${post.title ?? "post"}`}
+        />
+        {canEditPost ? editPostForm : (
+          <EmptyState
+            action={<Link className="inline-flex min-h-10 items-center rounded-lg border border-primary bg-card px-4 py-2 text-sm text-primary" to={`/posts/${post.id}`}>Open detail</Link>}
+            description="Only company admins can edit draft, open, or archived posts owned by their company."
+            title="Post is not editable"
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <Link className="inline-flex items-center gap-2 text-sm text-primary" to="/posts">
@@ -305,14 +386,41 @@ export function PostDetailPage() {
         action={
           isAdmin && ownsPost ? (
             <div className="flex flex-wrap gap-2">
-              {post.status === "OPEN" ? (
+              {canEditPost ? (
+                <Link
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-primary bg-card px-4 py-2 text-sm font-normal text-primary transition hover:bg-surface-pearl"
+                  to={`/posts/${post.id}/edit`}
+                >
+                  <Pencil className="size-4" />
+                  Edit post
+                </Link>
+              ) : null}
+              {post.status === "DRAFT" ? (
+                <>
+                  <Button disabled={postStatusMutation.isPending} onClick={() => postStatusMutation.mutate({ status: "OPEN" })} type="button" variant="secondary">
+                    Publish
+                  </Button>
+                  <Button disabled={postStatusMutation.isPending} onClick={() => postStatusMutation.mutate({ status: "ARCHIVED" })} type="button" variant="secondary">
+                    Archive
+                  </Button>
+                </>
+              ) : post.status === "ARCHIVED" ? (
+                <>
+                  <Button disabled={postStatusMutation.isPending} onClick={() => postStatusMutation.mutate({ status: "DRAFT" })} type="button" variant="secondary">
+                    Resume draft
+                  </Button>
+                  <Button disabled={postStatusMutation.isPending} onClick={() => postStatusMutation.mutate({ status: "OPEN" })} type="button" variant="secondary">
+                    Publish
+                  </Button>
+                </>
+              ) : post.status === "OPEN" ? (
                 <>
                   <Button disabled={boostPostMutation.isPending} onClick={() => boostPostMutation.mutate()} type="button" variant="secondary">
                     <Rocket className="size-4" />
                     Boost post - 2 credits
                   </Button>
-                  <Button disabled={postStatusMutation.isPending} onClick={() => postStatusMutation.mutate({ status: "CANCELLED" })} type="button" variant="secondary">
-                    Cancel post
+                  <Button disabled={postStatusMutation.isPending} onClick={() => postStatusMutation.mutate({ status: "ARCHIVED" })} type="button" variant="secondary">
+                    Archive post
                   </Button>
                 </>
               ) : null}
@@ -479,57 +587,6 @@ export function PostDetailPage() {
           )}
         </Surface>
       </div>
-
-      {canEditCompanyPost({ ownsPost, role: user?.role, status: post.status }) ? (
-        <Surface>
-          <form className="grid gap-4 lg:grid-cols-3" onSubmit={postForm.handleSubmit((values) => updatePostMutation.mutate(values))}>
-            <div className="lg:col-span-3">
-              <h2 className="text-2xl font-semibold tracking-[-0.28px]">Edit post</h2>
-              <p className="mt-1 text-sm leading-6 text-muted">OPEN posts can be adjusted before bid decisions or assignment.</p>
-            </div>
-            <Field error={postForm.formState.errors.routeId} label="Route" required>
-              <Select {...postForm.register("routeId")}>
-                <option value="">Select route</option>
-                {routes.map((route) => (
-                  <option key={route.id} value={route.id}>
-                    {route.originLocation.city} {"->"} {route.destinationLocation.city}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field error={postForm.formState.errors.title} label="Title">
-              <Input {...postForm.register("title")} />
-            </Field>
-            <Field error={postForm.formState.errors.priceType} label="Price type" required>
-              <Select {...postForm.register("priceType")}>
-                <option value="REQUEST_QUOTE">Request quote</option>
-                <option value="FIXED">Fixed</option>
-                <option value="NEGOTIABLE">Negotiable</option>
-              </Select>
-            </Field>
-            <Field error={postForm.formState.errors.currency} label="Currency" required>
-              <Input {...postForm.register("currency")} />
-            </Field>
-            <Field error={postForm.formState.errors.priceAmount} label="Price amount">
-              <Input {...postForm.register("priceAmount")} inputMode="decimal" />
-            </Field>
-            <Field error={postForm.formState.errors.weightKg} label="Weight kg">
-              <Input {...postForm.register("weightKg")} inputMode="numeric" type="number" />
-            </Field>
-            <div className="lg:col-span-3">
-              <Field error={postForm.formState.errors.cargoDescription} label="Cargo description">
-                <Textarea {...postForm.register("cargoDescription")} />
-              </Field>
-            </div>
-            <div className="lg:col-span-3">
-              <Button disabled={updatePostMutation.isPending} type="submit">
-                <Pencil className="size-4" />
-                Save changes
-              </Button>
-            </div>
-          </form>
-        </Surface>
-      ) : null}
 
       {boostBidTarget ? (
         <Surface>

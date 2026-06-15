@@ -8,8 +8,10 @@ describe("post and bid role permissions", () => {
     expect(canEditCompanyPost({ ownsPost: true, role: "COMPANY_DRIVER", status: "OPEN" })).toBe(false);
   });
 
-  it("allows admins to edit only their own open company posts", () => {
+  it("allows admins to edit their own open, draft, or archived company posts", () => {
     expect(canEditCompanyPost({ ownsPost: true, role: "COMPANY_ADMIN", status: "OPEN" })).toBe(true);
+    expect(canEditCompanyPost({ ownsPost: true, role: "COMPANY_ADMIN", status: "DRAFT" })).toBe(true);
+    expect(canEditCompanyPost({ ownsPost: true, role: "COMPANY_ADMIN", status: "ARCHIVED" })).toBe(true);
     expect(canEditCompanyPost({ ownsPost: true, role: "COMPANY_ADMIN", status: "CANCELLED" })).toBe(false);
     expect(canEditCompanyPost({ ownsPost: false, role: "COMPANY_ADMIN", status: "OPEN" })).toBe(false);
   });

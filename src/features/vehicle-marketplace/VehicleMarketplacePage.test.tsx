@@ -88,6 +88,24 @@ describe("VehicleMarketplacePage", () => {
     });
   });
 
+  it("keeps advanced filters collapsed until requested", async () => {
+    useAuthStore.setState({ status: "authenticated", user: adminUser });
+    renderPage();
+
+    expect(await screen.findByText("MAN TGX for rent")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/price min/i)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /advanced filters/i }));
+    await userEvent.type(screen.getByLabelText(/price min/i), "700");
+    await userEvent.click(screen.getByRole("button", { name: /apply/i }));
+
+    await waitFor(() => {
+      expect(vehicleMarketplaceApi.listVehicleMarketplaceListings).toHaveBeenLastCalledWith(
+        expect.objectContaining({ priceMin: 700 }),
+      );
+    });
+  });
+
   it("hides create controls for company drivers", async () => {
     useAuthStore.setState({ status: "authenticated", user: driverUser });
     renderPage();
