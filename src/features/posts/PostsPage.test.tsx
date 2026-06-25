@@ -91,7 +91,7 @@ function post(overrides: Record<string, unknown>) {
     cargoDescription: "Cargo",
     cargoType: null,
     companyId: "company_123",
-    createdAt: "",
+    createdAt: "2026-06-14T10:00:00.000Z",
     createdByUserId: "user_123",
     currency: "EUR",
     deletedAt: null,
@@ -135,7 +135,10 @@ describe("PostsPage marketplace filters", () => {
     postsApi.listPosts.mockResolvedValue([
       post({
         companyId: "other_company",
+        company: { city: "Skopje", countryCode: "MK", id: "other_company", isVerified: true, name: "Atlas Freight" },
         id: "post_1",
+        createdAt: "2026-06-14T10:00:00.000Z",
+        description: "Steel coils ready for covered transport this week.",
         route: {
           destinationLocation: { city: "Sofia", countryCode: "BG" },
           id: "other_route_1",
@@ -147,6 +150,8 @@ describe("PostsPage marketplace filters", () => {
       }),
       post({
         companyId: "other_company",
+        company: { city: "Bitola", countryCode: "MK", id: "other_company_2", isVerified: false, name: "Cold Chain DOO" },
+        createdAt: "2026-06-13T09:00:00.000Z",
         id: "post_2",
         route: {
           destinationLocation: { city: "Tirana", countryCode: "AL" },
@@ -165,7 +170,10 @@ describe("PostsPage marketplace filters", () => {
     renderPage();
 
     expect(await screen.findByText("Steel coils")).toBeInTheDocument();
+    expect(screen.getByText("Best route matches")).toBeInTheDocument();
     expect(screen.getByText("Skopje, MK -> Sofia, BG")).toBeInTheDocument();
+    expect(screen.getByText("Posted Jun 14, 2026")).toBeInTheDocument();
+    expect(screen.getByText("Atlas Freight, Skopje")).toBeInTheDocument();
     expect(screen.getAllByText("Request Quote").length).toBeGreaterThan(0);
     expect(postsApi.listPosts).toHaveBeenLastCalledWith({ scope: "marketplace" });
 
@@ -176,11 +184,39 @@ describe("PostsPage marketplace filters", () => {
     expect(screen.getAllByText("Open").length).toBeGreaterThan(0);
   });
 
+  it("filters marketplace posts by route country and location from the shared popover", async () => {
+    renderPage();
+
+    expect(await screen.findByText("Steel coils")).toBeInTheDocument();
+    expect(screen.getByText("Frozen goods")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /^filters$/i }));
+    expect(await screen.findByRole("dialog", { name: /transport marketplace filters/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Country code"), "bg");
+    await userEvent.click(screen.getByRole("button", { name: /^apply$/i }));
+
+    expect(screen.getByText("Steel coils")).toBeInTheDocument();
+    expect(screen.queryByText("Frozen goods")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /^filters \(1\)$/i }));
+    await userEvent.clear(screen.getByLabelText("Country code"));
+    await userEvent.type(screen.getByLabelText("Location"), "Tirana");
+    await userEvent.click(screen.getByRole("button", { name: /^apply$/i }));
+
+    expect(screen.queryByText("Steel coils")).not.toBeInTheDocument();
+    expect(screen.getByText("Frozen goods")).toBeInTheDocument();
+  });
+
   it("passes supported status filters to the backend for my posts", async () => {
     renderPage({ fixedScope: "mine" });
 
     await screen.findByText("Steel coils");
+    expect(screen.getByRole("columnheader", { name: "Posted" })).toBeInTheDocument();
+    expect(screen.getByText("Jun 14, 2026")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^filters$/i }));
+    expect(await screen.findByRole("dialog", { name: /transport post filters/i })).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText("Status"), "CANCELLED");
+    await userEvent.click(screen.getByRole("button", { name: /^apply$/i }));
 
     await waitFor(() => expect(postsApi.listPosts).toHaveBeenLastCalledWith({ deleted: "active", scope: "mine", status: "CANCELLED" }));
   });

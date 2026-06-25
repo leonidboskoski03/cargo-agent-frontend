@@ -19,37 +19,27 @@ import { canManageFleet } from "./fleetPermissions";
 import { vehicleSchema, type VehicleFormInput, type VehicleFormValues } from "./fleetSchemas";
 
 const vehicleDefaults: VehicleFormInput = {
-  bodyType: "",
   brand: "",
-  capacityKg: "",
   countryOfRegistration: "",
   documentsJson: "",
-  hazmatCertified: false,
   imageUrl: "",
   isActive: true,
   model: "",
   plateNumber: "",
-  refrigerated: false,
   vehicleType: "TRUCK",
-  volumeM3: "",
   year: "",
 };
 
 function toVehicleForm(vehicle: VehicleRecord): VehicleFormInput {
   return {
-    bodyType: vehicle.bodyType ?? "",
     brand: vehicle.brand ?? "",
-    capacityKg: vehicle.capacityKg ?? "",
     countryOfRegistration: vehicle.countryOfRegistration,
     documentsJson: typeof vehicle.documentsJson === "string" ? vehicle.documentsJson : "",
-    hazmatCertified: Boolean(vehicle.hazmatCertified),
     imageUrl: vehicle.imageUrl ?? "",
     isActive: vehicle.isActive,
     model: vehicle.model ?? "",
     plateNumber: vehicle.plateNumber,
-    refrigerated: Boolean(vehicle.refrigerated),
     vehicleType: vehicle.vehicleType,
-    volumeM3: vehicle.volumeM3 ?? "",
     year: vehicle.year ?? "",
   };
 }
@@ -114,13 +104,13 @@ export function FleetVehiclesPage() {
     },
   });
 
-  if (vehiclesQuery.isLoading) return <LoadingState description="Loading company vehicles." title="Loading vehicles" />;
-  if (vehiclesQuery.error) return <ErrorState description="Vehicle data could not be loaded." error={vehiclesQuery.error} title="Unable to load vehicles" />;
+  if (vehiclesQuery.isLoading) return <LoadingState description="Loading company vehicles and trailers." title="Loading fleet assets" />;
+  if (vehiclesQuery.error) return <ErrorState description="Fleet asset data could not be loaded." error={vehiclesQuery.error} title="Unable to load fleet assets" />;
   const isDeletedView = registryView === "deleted";
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Fleet operations" subtitle="Track company equipment, capabilities, and active status." title="Vehicles" />
+      <PageHeader eyebrow="Fleet operations" subtitle="Track company vehicles, trailers, media, and active status." title="Vehicles and trailers" />
 
       {deleted && canManage ? (
         <Surface className="flex flex-col gap-3 border-amber-200 bg-amber-50 md:flex-row md:items-center md:justify-between">
@@ -132,41 +122,32 @@ export function FleetVehiclesPage() {
         </Surface>
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[0.42fr_0.58fr]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(24rem,28rem)_minmax(0,1fr)]">
         {canManage ? (
           <Surface>
             <form className="space-y-4" onSubmit={form.handleSubmit((values) => editing ? updateMutation.mutate(values) : createMutation.mutate(values))}>
               <div>
-                <h2 className="text-2xl font-semibold tracking-[-0.28px]">{editing ? "Edit vehicle" : "Add vehicle"}</h2>
+                <h2 className="text-2xl font-semibold tracking-[-0.28px]">{editing ? "Edit fleet asset" : "Add vehicle or trailer"}</h2>
                 <p className="mt-1 text-sm leading-6 text-muted">Register the asset, then attach media with uploads instead of raw links.</p>
               </div>
               <section className="space-y-3">
                 <h3 className="text-sm font-semibold uppercase text-muted">Identity</h3>
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field error={form.formState.errors.vehicleType?.message} label="Type" required>
-                    <Select {...form.register("vehicleType")}>
+                    <Select aria-label="Type" {...form.register("vehicleType")}>
                       <option value="TRUCK">Truck</option>
                       <option value="TRAILER">Trailer</option>
                       <option value="VAN">Van</option>
                     </Select>
                   </Field>
-                  <Field error={form.formState.errors.bodyType?.message} label="Body type">
-                    <Select {...form.register("bodyType")}>
-                      <option value="">Not set</option>
-                      <option value="TILT">Tilt</option>
-                      <option value="BOX">Box</option>
-                      <option value="FLATBED">Flatbed</option>
-                      <option value="REEFER">Reefer</option>
-                      <option value="TANKER">Tanker</option>
-                    </Select>
-                  </Field>
+                  <Checkbox {...form.register("isActive")}>Active vehicle</Checkbox>
                 </div>
                 <div className="grid gap-4 md:grid-cols-[0.65fr_0.35fr]">
                   <Field error={form.formState.errors.plateNumber?.message} label="Plate number" required>
                     <Input {...form.register("plateNumber")} />
                   </Field>
                   <Field error={form.formState.errors.countryOfRegistration?.message} label="Country" required>
-                    <Select {...form.register("countryOfRegistration")}>
+                    <Select aria-label="Country" {...form.register("countryOfRegistration")}>
                       <option value="">Select</option>
                       {(countriesQuery.data ?? []).map((country) => <option key={country.code} value={country.code}>{country.code}</option>)}
                     </Select>
@@ -183,21 +164,10 @@ export function FleetVehiclesPage() {
                     <Input {...form.register("model")} />
                   </Field>
                 </div>
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2">
                   <Field error={form.formState.errors.year?.message} label="Year">
                     <Input {...form.register("year")} inputMode="numeric" type="number" />
                   </Field>
-                  <Field error={form.formState.errors.capacityKg?.message} label="Capacity kg">
-                    <Input {...form.register("capacityKg")} inputMode="numeric" type="number" />
-                  </Field>
-                  <Field error={form.formState.errors.volumeM3?.message} label="Volume m3">
-                    <Input {...form.register("volumeM3")} inputMode="decimal" type="number" />
-                  </Field>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <Checkbox {...form.register("refrigerated")}>Refrigerated</Checkbox>
-                  <Checkbox {...form.register("hazmatCertified")}>Hazmat</Checkbox>
-                  <Checkbox {...form.register("isActive")}>Active</Checkbox>
                 </div>
               </section>
               <section className="space-y-3 border-t border-border pt-4">
@@ -235,7 +205,7 @@ export function FleetVehiclesPage() {
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button disabled={createMutation.isPending || updateMutation.isPending} type="submit">
                   <Save aria-hidden="true" className="size-4" />
-                  {editing ? "Save vehicle" : "Add vehicle"}
+                  {editing ? "Save fleet asset" : "Add fleet asset"}
                 </Button>
                 {editing ? <Button onClick={() => setEditing(null)} type="button" variant="secondary">Cancel</Button> : null}
               </div>
@@ -283,8 +253,8 @@ export function FleetVehiclesPage() {
           <div className="mt-5">
             {vehicles.length === 0 ? (
               <EmptyState
-                description={isDeletedView ? "Deleted fleet vehicles will appear here after admins remove them from the active registry." : "Add a company vehicle to start assigning drivers."}
-                title={isDeletedView ? "No deleted vehicles" : "No vehicles yet"}
+                description={isDeletedView ? "Deleted fleet assets will appear here after admins remove them from the active registry." : "Add a company vehicle or trailer to start building the registry."}
+                title={isDeletedView ? "No deleted fleet assets" : "No fleet assets yet"}
               />
             ) : (
               <Table>
@@ -293,8 +263,19 @@ export function FleetVehiclesPage() {
                   {vehicles.map((vehicle) => (
                     <tr key={vehicle.id}>
                       <Td>
-                        <p className="font-semibold">{vehicle.plateNumber} - {vehicle.countryOfRegistration}</p>
-                        <p className="mt-1 text-xs text-muted">{[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.vehicleType}</p>
+                        <div className="flex min-w-56 items-center gap-3">
+                          <div className="relative grid size-16 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-surface-pearl text-muted">
+                            {vehicle.imageUrl ? (
+                              <img alt={`${vehicle.plateNumber} vehicle`} className="absolute inset-0 size-full object-cover" src={vehicle.imageUrl} />
+                            ) : (
+                              <Truck aria-hidden="true" className="size-7" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold">{vehicle.plateNumber} - {vehicle.countryOfRegistration}</p>
+                            <p className="mt-1 text-xs text-muted">{[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.vehicleType}</p>
+                          </div>
+                        </div>
                       </Td>
                       <Td>
                         <p>{[vehicle.bodyType, vehicle.capacityKg ? `${vehicle.capacityKg} kg` : null, vehicle.volumeM3 ? `${vehicle.volumeM3} m3` : null, vehicle.refrigerated ? "Refrigerated" : null, vehicle.hazmatCertified ? "Hazmat" : null].filter(Boolean).join(" - ") || "No capabilities"}</p>
@@ -308,28 +289,25 @@ export function FleetVehiclesPage() {
                               <Tooltip label="Restore vehicle">
                                 <Button
                                   aria-label={`Restore ${vehicle.plateNumber}`}
-                                  className="h-9 min-h-9 px-3"
+                                  className="size-9 min-h-9 px-0"
                                   disabled={restoreMutation.isPending}
                                   onClick={() => restoreMutation.mutate(vehicle.id)}
                                   type="button"
                                   variant="secondary"
                                 >
                                   <RotateCcw aria-hidden="true" className="size-4" />
-                                  Restore
                                 </Button>
                               </Tooltip>
                             ) : (
                               <>
                                 <Tooltip label="Edit vehicle">
-                                  <Button aria-label={`Edit ${vehicle.plateNumber}`} className="h-9 min-h-9 px-3" onClick={() => setEditing(vehicle)} type="button" variant="secondary">
+                                  <Button aria-label={`Edit ${vehicle.plateNumber}`} className="size-9 min-h-9 px-0" onClick={() => setEditing(vehicle)} type="button" variant="secondary">
                                     <Pencil aria-hidden="true" className="size-4" />
-                                    Edit
                                   </Button>
                                 </Tooltip>
                                 <Tooltip label="Delete vehicle">
-                                  <Button aria-label={`Delete ${vehicle.plateNumber}`} className="h-9 min-h-9 px-3" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(vehicle.id)} type="button" variant="danger">
+                                  <Button aria-label={`Delete ${vehicle.plateNumber}`} className="size-9 min-h-9 px-0" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(vehicle.id)} type="button" variant="danger">
                                     <Trash2 aria-hidden="true" className="size-4" />
-                                    Delete
                                   </Button>
                                 </Tooltip>
                               </>

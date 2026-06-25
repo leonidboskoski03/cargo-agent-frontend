@@ -19,19 +19,14 @@ const optionalDate = z.preprocess((value) => {
 const optionalUrl = optionalTrimmed.pipe(z.string().url("Enter a valid URL.").optional());
 
 export const vehicleSchema = z.object({
-  bodyType: z.preprocess((value) => value === "" ? undefined : value, z.enum(["TILT", "BOX", "FLATBED", "REEFER", "TANKER"]).optional()),
   brand: optionalTrimmed,
-  capacityKg: optionalNumber.pipe(z.number().int().positive().optional()),
   countryOfRegistration: z.string().trim().length(2, "Use a two-letter country code.").transform((value) => value.toUpperCase()),
-  hazmatCertified: z.boolean().optional(),
   imageUrl: optionalUrl,
   documentsJson: optionalTrimmed,
   isActive: z.boolean().optional(),
   model: optionalTrimmed,
   plateNumber: z.string().trim().min(2, "Plate number is required.").max(40),
-  refrigerated: z.boolean().optional(),
   vehicleType: z.enum(["TRUCK", "TRAILER", "VAN"]),
-  volumeM3: optionalNumber.pipe(z.number().positive().optional()),
   year: optionalNumber.pipe(z.number().int().min(1950).max(2100).optional()),
 });
 

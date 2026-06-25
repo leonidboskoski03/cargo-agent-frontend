@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -62,6 +62,20 @@ describe("VehicleMarketplaceMinePage", () => {
         vehicleType: "TRUCK",
       },
       {
+        city: "Bitola",
+        countryCode: "MK",
+        createdAt: "",
+        deletedAt: null,
+        id: "listing_draft",
+        intent: "SALE",
+        ownerCompanyId: "company_1",
+        sourceType: "STANDALONE",
+        status: "DRAFT",
+        title: "Draft truck listing",
+        updatedAt: "",
+        vehicleType: "TRUCK",
+      },
+      {
         city: "Skopje",
         countryCode: "MK",
         createdAt: "",
@@ -86,7 +100,7 @@ describe("VehicleMarketplaceMinePage", () => {
     expect(await screen.findByText("Active truck listing")).toBeInTheDocument();
     expect(screen.queryByText("Deleted trailer listing")).not.toBeInTheDocument();
     expect(vehicleMarketplaceApi.listMyVehicleMarketplaceListings).toHaveBeenCalledWith({ includeDeleted: true });
-    expect(screen.getByRole("button", { name: /active 1/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /active 2/i })).toHaveAttribute("aria-pressed", "true");
 
     await userEvent.click(screen.getByRole("button", { name: /deleted 1/i }));
 
@@ -95,5 +109,23 @@ describe("VehicleMarketplaceMinePage", () => {
     await userEvent.click(screen.getByRole("button", { name: /restore/i }));
 
     expect(vehicleMarketplaceApi.restoreVehicleMarketplaceListing).toHaveBeenCalledWith("listing_deleted", expect.anything());
+  });
+
+  it("filters owned listings by status from the shared popover", async () => {
+    renderPage();
+
+    expect(await screen.findByText("Active truck listing")).toBeInTheDocument();
+    expect(screen.getByText("Draft truck listing")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /^filters$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /owned listing filters/i });
+    await userEvent.click(within(dialog).getByRole("button", { name: /^all statuses$/i }));
+    const draftOptions = within(dialog).getAllByRole("button", { name: /^draft$/i });
+    await userEvent.click(draftOptions[draftOptions.length - 1]);
+    await userEvent.click(within(dialog).getByRole("button", { name: /^apply$/i }));
+
+    expect(await screen.findByText("Draft truck listing")).toBeInTheDocument();
+    expect(screen.queryByText("Active truck listing")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^filters \(1\)$/i })).toBeInTheDocument();
   });
 });

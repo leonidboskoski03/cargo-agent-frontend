@@ -90,6 +90,17 @@ export type BidActivityRecord = {
   type: BidActivityType;
 };
 
+export type BidReplyRecord = {
+  authorCompanyId?: string | null;
+  authorUserId: string;
+  bidId: string;
+  createdAt: string;
+  deletedAt?: string | null;
+  id: string;
+  message: string;
+  updatedAt: string;
+};
+
 export type CreateBidInput = {
   currency: string;
   estimatedDeliveryAt?: string;
@@ -112,6 +123,14 @@ export function listBids(params?: BidListParams) {
 
 export function listBidActivities(bidId: string) {
   return unwrapData<BidActivityRecord[]>(apiClient.get(`/bids/${bidId}/activities`));
+}
+
+export function listBidReplies(bidId: string) {
+  return unwrapData<BidReplyRecord[]>(apiClient.get(`/bids/${bidId}/replies`));
+}
+
+export function createBidReply(bidId: string, input: { message: string }) {
+  return unwrapData<BidReplyRecord>(apiClient.post(`/bids/${bidId}/replies`, input));
 }
 
 export function createBid(input: CreateBidInput) {

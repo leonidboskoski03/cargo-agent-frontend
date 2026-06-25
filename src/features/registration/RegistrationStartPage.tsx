@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, BriefcaseBusiness, Building2, CheckCircle2, Mail, UserRound } from "lucide-react";
-import { motion } from "framer-motion";
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, Building2, CheckCircle2, Mail, UserRound } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
@@ -70,13 +70,32 @@ const fallbackCountries = [
   { code: "BG", name: "Bulgaria" },
 ];
 
+const stepRank: Record<WizardStep, number> = {
+  account: 0,
+  otp: 1,
+  company: 2,
+  jobSeeker: 2,
+};
+
+const stepMotion = {
+  center: { opacity: 1, x: 0 },
+  enter: (direction: number) => ({ opacity: 0, x: direction > 0 ? 44 : -44 }),
+  exit: (direction: number) => ({ opacity: 0, x: direction > 0 ? -44 : 44 }),
+};
+
 export function RegistrationStartPage() {
   const navigate = useNavigate();
   const setUser = useAuthStore((state) => state.setUser);
   const [step, setStep] = useState<WizardStep>("account");
+  const [direction, setDirection] = useState(1);
   const [accountKind, setAccountKind] = useState<AccountKind>("COMPANY");
   const [registration, setRegistration] = useState<RegistrationStartResponse | null>(null);
   const countriesQuery = useQuery({ queryFn: listSupportedCountries, queryKey: ["geo", "countries"], staleTime: 1000 * 60 * 30 });
+
+  const goToStep = (nextStep: WizardStep) => {
+    setDirection(stepRank[nextStep] >= stepRank[step] ? 1 : -1);
+    setStep(nextStep);
+  };
 
   const accountForm = useForm<RegistrationStartInput, unknown, RegistrationStartValues>({
     resolver: zodResolver(registrationStartSchema),
@@ -126,7 +145,7 @@ export function RegistrationStartPage() {
     mutationFn: (values: RegistrationStartValues) => startCompanyRegistration({ ...values, kind: accountKind }),
     onSuccess: (data) => {
       setRegistration(data);
-      setStep("otp");
+      goToStep("otp");
     },
   });
 
@@ -142,7 +161,7 @@ export function RegistrationStartPage() {
         return;
       }
 
-      setStep("company");
+      goToStep("company");
     },
   });
 
@@ -228,10 +247,12 @@ export function RegistrationStartPage() {
   const currentStepIndex = Math.max(0, visibleSteps.findIndex((item) => item.key === step));
   const progressPercent = currentStepIndex / Math.max(1, visibleSteps.length - 1) * 100;
   const countries = countriesQuery.data?.length ? countriesQuery.data : fallbackCountries;
+  const canGoBack = step !== "account";
+  const previousStep: WizardStep = step === "company" || step === "jobSeeker" ? "otp" : "account";
 
   return (
-    <main className="min-h-dvh bg-background px-4 py-4 lg:h-dvh lg:overflow-hidden">
-      <section className="mx-auto grid h-full max-w-6xl gap-4 lg:grid-cols-[18rem_1fr] lg:items-start">
+    <main className="flex min-h-dvh items-center bg-background px-4 py-4">
+      <section className="mx-auto grid w-full max-w-6xl gap-4 lg:grid-cols-[18rem_1fr] lg:items-center">
         <div className="space-y-4">
           <div>
             <Link className="text-sm font-semibold text-primary" to="/login">
@@ -279,11 +300,36 @@ export function RegistrationStartPage() {
         </div>
 
         <Surface className="max-h-none overflow-visible p-4 lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto">
-          <motion.div animate={{ opacity: 1, y: 0 }} initial={{ opacity: 0, y: 8 }} key={step} transition={{ duration: 0.18 }}>
+          <div className="mb-3 flex min-h-9 items-center justify-between gap-3">
+            {canGoBack ? (
+              <button
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                onClick={() => goToStep(previousStep)}
+                type="button"
+              >
+                <ArrowLeft aria-hidden="true" className="size-4" />
+                Back
+              </button>
+            ) : <span aria-hidden="true" />}
+            <span className="text-xs font-semibold uppercase text-muted">
+              Step {currentStepIndex + 1} of {visibleSteps.length}
+            </span>
+          </div>
+          <div className="overflow-hidden">
+          <AnimatePresence custom={direction} mode="wait">
+          <motion.div
+            animate="center"
+            custom={direction}
+            exit="exit"
+            initial="enter"
+            key={step}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            variants={stepMotion}
+          >
             {step === "account" ? (
               <form className="space-y-4" onSubmit={accountForm.handleSubmit((values) => startMutation.mutate(values))}>
                 <div>
-                  <p className="text-xs font-semibold uppercase text-muted">Step 1 of 3</p>
+                  <p className="text-xs font-semibold uppercase text-muted">Step 1 of {visibleSteps.length}</p>
                   <h2 className="mt-1 text-2xl font-semibold">{accountKind === "COMPANY" ? "Company admin account" : "Job seeker account"}</h2>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
@@ -368,7 +414,6 @@ export function RegistrationStartPage() {
                     onResend={() => resendOtpMutation.mutate()}
                   />
                 ) : null}
-                <Button className="w-full" disabled={otpMutation.isPending} type="submit">Verify code</Button>
               </form>
             ) : null}
 
@@ -378,7 +423,7 @@ export function RegistrationStartPage() {
                   <div className="grid size-10 place-items-center rounded-lg bg-surface-pearl">
                     <CheckCircle2 className="size-5 text-primary" />
                   </div>
-                  <p className="mt-3 text-xs font-semibold uppercase text-muted">Step 3 of 3</p>
+                  <p className="mt-3 text-xs font-semibold uppercase text-muted">Step 3 of {visibleSteps.length}</p>
                   <h2 className="mt-1 text-2xl font-semibold">Company profile</h2>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
@@ -427,7 +472,7 @@ export function RegistrationStartPage() {
                   <div className="grid size-10 place-items-center rounded-lg bg-surface-pearl">
                     <BriefcaseBusiness className="size-5 text-primary" />
                   </div>
-                  <p className="mt-3 text-xs font-semibold uppercase text-muted">Step 3 of 3</p>
+                  <p className="mt-3 text-xs font-semibold uppercase text-muted">Step 3 of {visibleSteps.length}</p>
                   <h2 className="mt-1 text-2xl font-semibold">Driver profile</h2>
                 </div>
                 <p className="text-sm leading-6 text-muted">Add the work context companies need before they review your applications or marketplace listings.</p>
@@ -462,6 +507,8 @@ export function RegistrationStartPage() {
               </form>
             ) : null}
           </motion.div>
+          </AnimatePresence>
+          </div>
         </Surface>
       </section>
     </main>

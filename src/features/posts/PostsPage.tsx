@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CreditCard, Filter, GitBranchPlus, Pencil, Plus, Rocket, RotateCcw, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Building2, CalendarDays, CreditCard, GitBranchPlus, MapPin, Package, Pencil, Plus, Rocket, RotateCcw, Scale, Search, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import { createRoute, listLocations, listRoutes, type Location, type RouteRecord
 import { boostPost, changePostStatus, createPost, deletePost, listPosts, restorePost, type PostRecord, type PostScope, type PostStatus } from "@/shared/api/modules/posts";
 import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
+import { FilterPopover } from "@/shared/components/ui/FilterPopover";
 import { Field, Input, Select, Textarea } from "@/shared/components/ui/Form";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
 import { Tooltip } from "@/shared/components/ui/Tooltip";
@@ -42,6 +43,13 @@ type QuickRouteValues = {
   originLocationId: string;
 };
 
+type MarketplaceFilterDraft = {
+  countryCode: string;
+  location: string;
+  routeId: string;
+  status: string;
+};
+
 function formatPostRoute(post: PostRecord, routes: Awaited<ReturnType<typeof listRoutes>>) {
   if (post.route) {
     return `${post.route.originLocation.city}, ${post.route.originLocation.countryCode} -> ${post.route.destinationLocation.city}, ${post.route.destinationLocation.countryCode}`;
@@ -57,6 +65,10 @@ function postTone(status: string) {
   if (status === "ASSIGNED") return "warning";
   if (status === "CANCELLED") return "danger";
   return "neutral";
+}
+
+function postTitle(post: PostRecord) {
+  return post.title || post.cargoDescription || "Untitled post";
 }
 
 function isPostBoosted(post: PostRecord) {
@@ -78,11 +90,74 @@ function optionalNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function getRegion(location: unknown) {
+  return location && typeof location === "object" && "region" in location
+    ? (location as { region?: string | null }).region
+    : undefined;
+}
+
+function routeLocationText(post: PostRecord, routes: Awaited<ReturnType<typeof listRoutes>>) {
+  const route = post.route ?? routes.find((item) => item.id === post.routeId);
+  if (!route) return "";
+  return [
+    route.originLocation.city,
+    getRegion(route.originLocation),
+    route.originLocation.countryCode,
+    route.destinationLocation.city,
+    getRegion(route.destinationLocation),
+    route.destinationLocation.countryCode,
+  ].filter(Boolean).join(" ");
+}
+
+function matchesRouteLocationFilters(post: PostRecord, routes: Awaited<ReturnType<typeof listRoutes>>, locationFilter: string, countryFilter: string) {
+  const route = post.route ?? routes.find((item) => item.id === post.routeId);
+  if (!route) return !locationFilter.trim() && !countryFilter.trim();
+
+  const normalizedLocation = locationFilter.trim().toLowerCase();
+  const normalizedCountry = countryFilter.trim().toLowerCase();
+  const routeText = routeLocationText(post, routes).toLowerCase();
+  const routeCountries = [
+    route.originLocation.countryCode,
+    route.destinationLocation.countryCode,
+  ].map((countryCode) => countryCode.toLowerCase());
+
+  const matchesLocation = !normalizedLocation || routeText.includes(normalizedLocation);
+  const matchesCountry = !normalizedCountry || routeCountries.includes(normalizedCountry);
+  return matchesLocation && matchesCountry;
+}
+
+function formatPostedDate(value?: string | null) {
+  if (!value) return "Date unavailable";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "Date unavailable";
+  return new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" }).format(date);
+}
+
+function formatPrice(post: PostRecord) {
+  return post.priceAmount ? `${post.priceAmount} ${post.currency}` : humanizeEnum(post.priceType);
+}
+
+function compactCargoFacts(post: PostRecord) {
+  return [
+    post.weightKg ? `${post.weightKg.toLocaleString()} kg` : null,
+    post.palletCount ? `${post.palletCount} pallets` : null,
+    post.volumeM3 ? `${post.volumeM3} m3` : null,
+    post.temperatureControlRequired ? "Temperature control" : null,
+    post.hazmat ? "Hazmat" : null,
+  ].filter(Boolean);
+}
+
 export function PostsPage({ creationOnly = false, fixedScope, mode = "planned" }: PostsPageProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [registryView, setRegistryView] = useState<"active" | "archived" | "deleted">("active");
+  const [draftFilters, setDraftFilters] = useState<MarketplaceFilterDraft>({
+    countryCode: searchParams.get("countryCode") ?? "",
+    location: searchParams.get("location") ?? "",
+    routeId: searchParams.get("routeId") ?? "",
+    status: searchParams.get("status") ?? "ALL",
+  });
   const [quickRouteDraft, setQuickRouteDraft] = useState<QuickRouteDraft>({
     destinationLocation: "",
     distanceKm: "",
@@ -98,6 +173,8 @@ export function PostsPage({ creationOnly = false, fixedScope, mode = "planned" }
   const status = scope === "mine" && postStatuses.includes(requestedStatus as PostStatus) && requestedStatus !== "ALL" ? requestedStatus as PostStatus : null;
   const selectedStatus = status ?? "ALL";
   const selectedRouteId = searchParams.get("routeId") ?? "";
+  const selectedCountryCode = searchParams.get("countryCode") ?? "";
+  const selectedLocation = searchParams.get("location") ?? "";
   const search = searchParams.get("q") ?? "";
   const isDeletedView = scope === "mine" && registryView === "deleted";
   const isArchivedView = scope === "mine" && registryView === "archived";
@@ -122,16 +199,49 @@ export function PostsPage({ creationOnly = false, fixedScope, mode = "planned" }
     const searchNeedle = search.trim().toLowerCase();
     const matchesLifecycle = scope !== "mine" || isDeletedView || (isArchivedView ? unfinishedStatuses.includes(post.status) : !unfinishedStatuses.includes(post.status));
     const matchesRoute = scope === "marketplace" || !selectedRouteId || post.routeId === selectedRouteId;
-    const matchesSearch = !searchNeedle || `${post.title ?? ""} ${post.cargoDescription ?? ""} ${post.description ?? ""}`.toLowerCase().includes(searchNeedle);
-    return matchesLifecycle && matchesRoute && matchesSearch;
+    const matchesSearch = !searchNeedle || `${post.title ?? ""} ${post.cargoDescription ?? ""} ${post.description ?? ""} ${routeLocationText(post, routes)}`.toLowerCase().includes(searchNeedle);
+    const matchesMarketplaceLocation = scope !== "marketplace" || matchesRouteLocationFilters(post, routes, selectedLocation, selectedCountryCode);
+    return matchesLifecycle && matchesRoute && matchesSearch && matchesMarketplaceLocation;
   });
 
-  const updateFilter = (key: "q" | "routeId" | "scope" | "status", value: string) => {
+  const updateFilter = (key: "countryCode" | "location" | "q" | "routeId" | "scope" | "status", value: string) => {
     const next = new URLSearchParams(searchParams);
     if (!value || value === "ALL") next.delete(key);
     else next.set(key, value);
-    if (key === "scope") next.delete("routeId");
+    if (key === "scope") {
+      next.delete("countryCode");
+      next.delete("location");
+      next.delete("routeId");
+      next.delete("status");
+    }
     setSearchParams(next);
+  };
+
+  useEffect(() => {
+    setDraftFilters({
+      countryCode: selectedCountryCode,
+      location: selectedLocation,
+      routeId: selectedRouteId,
+      status: selectedStatus,
+    });
+  }, [selectedCountryCode, selectedLocation, selectedRouteId, selectedStatus]);
+
+  const applyPopoverFilters = () => {
+    const next = new URLSearchParams(searchParams);
+    if (scope === "mine" && draftFilters.status && draftFilters.status !== "ALL") next.set("status", draftFilters.status);
+    else next.delete("status");
+    if (scope === "mine" && draftFilters.routeId) next.set("routeId", draftFilters.routeId);
+    else next.delete("routeId");
+    if (scope === "marketplace" && draftFilters.countryCode.trim()) next.set("countryCode", draftFilters.countryCode.trim().toUpperCase());
+    else next.delete("countryCode");
+    if (scope === "marketplace" && draftFilters.location.trim()) next.set("location", draftFilters.location.trim());
+    else next.delete("location");
+    setSearchParams(next);
+  };
+
+  const clearFilters = () => {
+    setDraftFilters({ countryCode: "", location: "", routeId: "", status: "ALL" });
+    setSearchParams(new URLSearchParams());
   };
 
   const form = useForm<PostFormInput, unknown, PostFormValues>({
@@ -238,9 +348,16 @@ export function PostsPage({ creationOnly = false, fixedScope, mode = "planned" }
   const setRegistryMode = (view: "active" | "archived" | "deleted") => {
     setRegistryView(view);
     const next = new URLSearchParams(searchParams);
+    next.delete("countryCode");
+    next.delete("location");
     next.delete("status");
+    next.delete("routeId");
     setSearchParams(next);
   };
+
+  const activePopoverFilterCount = scope === "mine"
+    ? [selectedStatus !== "ALL" ? selectedStatus : "", selectedRouteId].filter(Boolean).length
+    : [selectedCountryCode, selectedLocation].filter(Boolean).length;
 
   if (postsQuery.isLoading || routesQuery.isLoading || locationsQuery.isLoading) {
     return <LoadingState description="Preparing posts, routes, and company marketplace data." title="Loading transport posts" />;
@@ -477,29 +594,73 @@ export function PostsPage({ creationOnly = false, fixedScope, mode = "planned" }
       {creationOnly ? null : (
         <>
           <Surface>
-            <div className="grid gap-4 lg:grid-cols-[0.7fr_0.45fr_0.45fr_auto] lg:items-end">
-              <Field label="Search posts">
-                <Input onChange={(event) => updateFilter("q", event.target.value)} placeholder="Cargo, title, description" value={search} />
-              </Field>
-              {scope === "mine" ? (
-                <Field label="Status">
-                  <Select onChange={(event) => updateFilter("status", event.target.value)} value={selectedStatus}>
-                    {postStatuses.map((item) => <option key={item} value={item}>{item === "ALL" ? "All statuses" : humanizeEnum(item)}</option>)}
-                  </Select>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div className="w-full max-w-xl">
+                <Field label="Search posts">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                    <Input className="pl-9" onChange={(event) => updateFilter("q", event.target.value)} placeholder="Cargo, title, description" value={search} />
+                  </div>
                 </Field>
-              ) : null}
-              {scope === "mine" ? (
-                <Field label="Route">
-                  <Select onChange={(event) => updateFilter("routeId", event.target.value)} value={selectedRouteId}>
-                    <option value="">All routes</option>
-                    {routes.map((route) => <option key={route.id} value={route.id}>{route.originLocation.city} {"->"} {route.destinationLocation.city}</option>)}
-                  </Select>
-                </Field>
-              ) : null}
-              <Button onClick={() => setSearchParams(new URLSearchParams())} type="button" variant="secondary">
-                <Filter className="size-4" aria-hidden="true" />
-                Clear
-              </Button>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {scope === "mine" ? (
+                  <FilterPopover
+                    activeCount={activePopoverFilterCount}
+                    description="Filter your company transport posts by lifecycle status and planned route."
+                    onApply={applyPopoverFilters}
+                    onClear={clearFilters}
+                    title="Transport post filters"
+                  >
+                    <section className="space-y-3">
+                      <h3 className="text-sm font-semibold uppercase text-muted">Registry filters</h3>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="Status">
+                          <Select onChange={(event) => setDraftFilters((current) => ({ ...current, status: event.target.value }))} value={draftFilters.status}>
+                            {postStatuses.map((item) => <option key={item} value={item}>{item === "ALL" ? "All statuses" : humanizeEnum(item)}</option>)}
+                          </Select>
+                        </Field>
+                        <Field label="Route">
+                          <Select onChange={(event) => setDraftFilters((current) => ({ ...current, routeId: event.target.value }))} value={draftFilters.routeId}>
+                            <option value="">All routes</option>
+                            {routes.map((route) => <option key={route.id} value={route.id}>{route.originLocation.city} {"->"} {route.destinationLocation.city}</option>)}
+                          </Select>
+                        </Field>
+                      </div>
+                    </section>
+                  </FilterPopover>
+                ) : (
+                  <FilterPopover
+                    activeCount={activePopoverFilterCount}
+                    description="Filter marketplace demand by route endpoint. Matches either origin or destination."
+                    onApply={applyPopoverFilters}
+                    onClear={clearFilters}
+                    title="Transport marketplace filters"
+                  >
+                    <section className="space-y-3">
+                      <h3 className="text-sm font-semibold uppercase text-muted">Route filters</h3>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="Country code">
+                          <Input
+                            maxLength={2}
+                            onChange={(event) => setDraftFilters((current) => ({ ...current, countryCode: event.target.value.toUpperCase() }))}
+                            placeholder="BG"
+                            value={draftFilters.countryCode}
+                          />
+                        </Field>
+                        <Field label="Location">
+                          <Input
+                            onChange={(event) => setDraftFilters((current) => ({ ...current, location: event.target.value }))}
+                            placeholder="Sofia, Skopje, region"
+                            value={draftFilters.location}
+                          />
+                        </Field>
+                      </div>
+                    </section>
+                  </FilterPopover>
+                )}
+                <Button onClick={clearFilters} type="button" variant="secondary">Clear</Button>
+              </div>
             </div>
           </Surface>
 
@@ -514,6 +675,84 @@ export function PostsPage({ creationOnly = false, fixedScope, mode = "planned" }
               description={posts.length === 0 ? (scope === "marketplace" ? "No other companies have open transport posts right now." : isDeletedView ? "Deleted company posts will appear here after admins remove them from the active registry." : isArchivedView ? "Draft and archived posts will appear here when admins save or archive unfinished work." : "Create the first transport post to start receiving and managing bids.") : "No posts match the current status, route, or search filters."}
               title={posts.length === 0 ? (scope === "marketplace" ? "No marketplace posts" : isDeletedView ? "No deleted posts" : isArchivedView ? "No drafts or archived posts" : "No posts yet") : "No matching posts"}
             />
+          ) : scope === "marketplace" ? (
+            <div className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="border-b border-border px-4 py-3">
+                <p className="text-sm font-semibold text-foreground">Best route matches</p>
+                <p className="mt-1 text-sm text-muted">Open demand from companies outside your account, ordered by boost and recency.</p>
+              </div>
+              <div className="divide-y divide-border">
+                {filteredPosts.map((post) => {
+                  const cargoFacts = compactCargoFacts(post);
+                  return (
+                    <article className="group px-4 py-4 transition hover:bg-surface-pearl" key={post.id}>
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                            <span className="inline-flex items-center gap-1">
+                              <CalendarDays className="size-3.5" aria-hidden="true" />
+                              Posted {formatPostedDate(post.createdAt)}
+                            </span>
+                            <span aria-hidden="true">•</span>
+                            <span>{formatPrice(post)}</span>
+                            {isPostBoosted(post) ? (
+                              <>
+                                <span aria-hidden="true">•</span>
+                                <span className="font-semibold text-primary">Boosted</span>
+                              </>
+                            ) : null}
+                          </div>
+                          <Link className="mt-3 block text-lg font-semibold leading-6 text-foreground transition group-hover:text-primary" to={`/posts/${post.id}`}>
+                            {postTitle(post)}
+                          </Link>
+                          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+                            <span className="inline-flex items-center gap-1.5">
+                              <MapPin className="size-4" aria-hidden="true" />
+                              {formatPostRoute(post, routes)}
+                            </span>
+                            {post.company ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <Building2 className="size-4" aria-hidden="true" />
+                                {post.company.name}{post.company.city ? `, ${post.company.city}` : ""}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        <Link className="inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg border border-primary bg-card px-3 py-2 text-sm font-semibold text-primary transition hover:bg-surface-pearl" to={`/posts/${post.id}`}>
+                          Open
+                        </Link>
+                      </div>
+
+                      {post.description || post.cargoDescription ? (
+                        <p className="mt-3 line-clamp-2 max-w-4xl text-sm leading-6 text-foreground">
+                          {post.description || post.cargoDescription}
+                        </p>
+                      ) : null}
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {post.cargoType ? <span className="rounded-md bg-surface-pearl px-2.5 py-1 text-xs font-semibold text-muted">{post.cargoType}</span> : null}
+                        {post.requiredBodyType ? <span className="rounded-md bg-surface-pearl px-2.5 py-1 text-xs font-semibold text-muted">{humanizeEnum(post.requiredBodyType)}</span> : null}
+                        {cargoFacts.map((fact) => <span className="rounded-md bg-surface-pearl px-2.5 py-1 text-xs font-semibold text-muted" key={fact}>{fact}</span>)}
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Package className="size-4" aria-hidden="true" />
+                          {post.cargoDescription || "Cargo details available in post"}
+                        </span>
+                        {post.weightKg ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <Scale className="size-4" aria-hidden="true" />
+                            {post.weightKg.toLocaleString()} kg
+                          </span>
+                        ) : null}
+                        <StatusBadge tone={postTone(post.status)}>{humanizeEnum(post.status)}</StatusBadge>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
           ) : (
             <Table>
               <thead>
@@ -521,6 +760,7 @@ export function PostsPage({ creationOnly = false, fixedScope, mode = "planned" }
                   <Th>Title</Th>
                   <Th>Route</Th>
                   <Th>Status</Th>
+                  <Th>Posted</Th>
                   <Th>Price</Th>
                   <Th>Actions</Th>
                 </tr>
@@ -541,13 +781,14 @@ export function PostsPage({ creationOnly = false, fixedScope, mode = "planned" }
                   >
                     <Td>
                       <Link className="font-semibold text-primary" onClick={(event) => event.stopPropagation()} to={`/posts/${post.id}`}>
-                        {post.title || post.cargoDescription || "Untitled post"}
+                        {postTitle(post)}
                       </Link>
                       {isPostBoosted(post) ? <span className="ml-2 rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-primary">Boosted</span> : null}
                     </Td>
                     <Td>{formatPostRoute(post, routes)}</Td>
                     <Td><StatusBadge tone={isDeletedView ? "danger" : postTone(post.status)}>{isDeletedView ? "Deleted" : humanizeEnum(post.status)}</StatusBadge></Td>
-                    <Td>{post.priceAmount ? `${post.priceAmount} ${post.currency}` : humanizeEnum(post.priceType)}</Td>
+                    <Td>{formatPostedDate(post.createdAt)}</Td>
+                    <Td>{formatPrice(post)}</Td>
                     <Td>
                       {isAdmin && post.companyId === user?.companyId ? (
                         <div className="flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>

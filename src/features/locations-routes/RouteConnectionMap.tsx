@@ -1,4 +1,5 @@
-import { MapPinned, Navigation } from "lucide-react";
+import { MapPinned, Navigation, ZoomIn, ZoomOut } from "lucide-react";
+import { useState } from "react";
 import type { RouteRecord } from "@/shared/api/modules/locationsRoutes";
 import { cn } from "@/shared/lib/cn";
 
@@ -34,6 +35,7 @@ function fittedPoint(point: MapPoint, origin: MapPoint, destination: MapPoint) {
 }
 
 export function RouteConnectionMap({ className, route }: { className?: string; route?: RouteRecord | null }) {
+  const [zoom, setZoom] = useState(1);
   const origin = route ? parsePoint(route.originLocation) : null;
   const destination = route ? parsePoint(route.destinationLocation) : null;
   const shellClassName = "relative h-[clamp(220px,36vh,420px)] min-h-0 overflow-hidden rounded-lg border border-border bg-surface-pearl shadow-sm";
@@ -83,35 +85,38 @@ export function RouteConnectionMap({ className, route }: { className?: string; r
   const destinationPixel = fittedPoint(destination, origin, destination);
   const controlX = (originPixel.x + destinationPixel.x) / 2;
   const controlY = Math.max(8, Math.min(originPixel.y, destinationPixel.y) - 14);
+  const zoomLabel = `${Math.round(zoom * 100)}%`;
 
   return (
     <div className={cn(shellClassName, className)}>
-      <div className="absolute inset-0 opacity-80">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(148,163,184,0.22)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.22)_1px,transparent_1px)] bg-[size:42px_42px]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(9,105,218,0.10),transparent_30%),radial-gradient(circle_at_80%_60%,rgba(16,185,129,0.08),transparent_26%)]" />
-      </div>
-      <div className="absolute inset-x-4 bottom-8 top-16">
-        <svg aria-hidden="true" className="size-full" preserveAspectRatio="none" viewBox="0 0 100 100">
-          <path
-            d={`M ${originPixel.x} ${originPixel.y} Q ${controlX} ${controlY} ${destinationPixel.x} ${destinationPixel.y}`}
-            fill="none"
-            stroke="rgba(9, 105, 218, 0.22)"
-            strokeLinecap="round"
-            strokeWidth="5"
-          />
-          <path
-            d={`M ${originPixel.x} ${originPixel.y} Q ${controlX} ${controlY} ${destinationPixel.x} ${destinationPixel.y}`}
-            fill="none"
-            stroke="#0969da"
-            strokeDasharray="3 2.5"
-            strokeLinecap="round"
-            strokeWidth="1.6"
-          >
-            <animate attributeName="stroke-dashoffset" dur="1.2s" from="26" repeatCount="indefinite" to="0" />
-          </path>
-          <circle cx={originPixel.x} cy={originPixel.y} fill="#ffffff" r="3.2" stroke="#0969da" strokeWidth="1.2" />
-          <circle cx={destinationPixel.x} cy={destinationPixel.y} fill="#0969da" r="3.2" stroke="#ffffff" strokeWidth="1.2" />
-        </svg>
+      <div className="absolute inset-0 origin-center transition-transform duration-200" style={{ transform: `scale(${zoom})` }}>
+        <div className="absolute inset-0 opacity-80">
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(148,163,184,0.22)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.22)_1px,transparent_1px)] bg-[size:42px_42px]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(9,105,218,0.10),transparent_30%),radial-gradient(circle_at_80%_60%,rgba(16,185,129,0.08),transparent_26%)]" />
+        </div>
+        <div className="absolute inset-x-4 bottom-8 top-16">
+          <svg aria-hidden="true" className="size-full" preserveAspectRatio="none" viewBox="0 0 100 100">
+            <path
+              d={`M ${originPixel.x} ${originPixel.y} Q ${controlX} ${controlY} ${destinationPixel.x} ${destinationPixel.y}`}
+              fill="none"
+              stroke="rgba(9, 105, 218, 0.22)"
+              strokeLinecap="round"
+              strokeWidth="5"
+            />
+            <path
+              d={`M ${originPixel.x} ${originPixel.y} Q ${controlX} ${controlY} ${destinationPixel.x} ${destinationPixel.y}`}
+              fill="none"
+              stroke="#0969da"
+              strokeDasharray="3 2.5"
+              strokeLinecap="round"
+              strokeWidth="1.6"
+            >
+              <animate attributeName="stroke-dashoffset" dur="1.2s" from="26" repeatCount="indefinite" to="0" />
+            </path>
+            <circle cx={originPixel.x} cy={originPixel.y} fill="#ffffff" r="3.2" stroke="#0969da" strokeWidth="1.2" />
+            <circle cx={destinationPixel.x} cy={destinationPixel.y} fill="#0969da" r="3.2" stroke="#ffffff" strokeWidth="1.2" />
+          </svg>
+        </div>
       </div>
 
       <div className="absolute inset-x-4 top-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card/95 px-3 py-2.5 shadow-sm backdrop-blur">
@@ -127,6 +132,28 @@ export function RouteConnectionMap({ className, route }: { className?: string; r
 
       <div className="absolute bottom-3 right-3 rounded-md bg-card/90 px-2 py-1 text-[11px] font-medium text-muted shadow-sm">
         Fitted coordinate preview, not live road geometry
+      </div>
+
+      <div className="absolute bottom-3 left-3 inline-flex items-center rounded-lg border border-border bg-card/95 p-1 text-xs font-semibold text-muted shadow-sm">
+        <button
+          aria-label="Zoom route map out"
+          className="grid size-7 place-items-center rounded-md transition hover:bg-surface-pearl disabled:opacity-40"
+          disabled={zoom <= 1}
+          onClick={() => setZoom((current) => Math.max(1, Number((current - 0.25).toFixed(2))))}
+          type="button"
+        >
+          <ZoomOut className="size-4" aria-hidden="true" />
+        </button>
+        <span className="min-w-12 text-center">{zoomLabel}</span>
+        <button
+          aria-label="Zoom route map in"
+          className="grid size-7 place-items-center rounded-md transition hover:bg-surface-pearl disabled:opacity-40"
+          disabled={zoom >= 2.5}
+          onClick={() => setZoom((current) => Math.min(2.5, Number((current + 0.25).toFixed(2))))}
+          type="button"
+        >
+          <ZoomIn className="size-4" aria-hidden="true" />
+        </button>
       </div>
     </div>
   );

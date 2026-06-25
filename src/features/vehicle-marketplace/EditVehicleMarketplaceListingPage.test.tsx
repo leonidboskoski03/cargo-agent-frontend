@@ -70,6 +70,8 @@ describe("EditVehicleMarketplaceListingPage", () => {
       model: "TGX",
       ownerCompanyId: "company_1",
       priceAmount: "900",
+      isRegistered: true,
+      registrationExpiresAt: "2027-05-20T00:00:00.000Z",
       refrigerated: false,
       sourceType: "STANDALONE",
       status: "PUBLISHED",
@@ -89,6 +91,16 @@ describe("EditVehicleMarketplaceListingPage", () => {
     renderPage();
 
     const title = await screen.findByDisplayValue("MAN TGX for rent");
+    expect(screen.queryByLabelText("Body type")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Capacity kg")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Volume m3")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Refrigerated")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Hazmat certified")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Price type")).toHaveValue("FIXED");
+    expect(screen.getByLabelText("Price amount")).toHaveValue("900");
+    expect(screen.getByLabelText("Registration status")).toHaveValue("REGISTERED");
+    expect(screen.getByLabelText("Registration expiry date")).toHaveValue("2027-05-20");
+    expect(screen.getByLabelText("Currency")).toBeInTheDocument();
     await userEvent.clear(title);
     await userEvent.type(title, "MAN TGX edited");
     await userEvent.click(screen.getByRole("button", { name: /save listing/i }));
@@ -99,8 +111,42 @@ describe("EditVehicleMarketplaceListingPage", () => {
         expect.objectContaining({
           city: "Skopje",
           countryCode: "MK",
+          isRegistered: true,
+          registrationExpiresAt: "2027-05-20",
           status: "PUBLISHED",
           title: "MAN TGX edited",
+        }),
+      );
+      const payload = vehicleMarketplaceApi.updateVehicleMarketplaceListing.mock.calls[0][1];
+      expect(payload).not.toHaveProperty("bodyType");
+      expect(payload).not.toHaveProperty("capacityKg");
+      expect(payload).not.toHaveProperty("volumeM3");
+      expect(payload).not.toHaveProperty("refrigerated");
+      expect(payload).not.toHaveProperty("hazmatCertified");
+    });
+  });
+
+  it("clears existing price fields when listing is changed to negotiable", async () => {
+    renderPage();
+
+    await screen.findByDisplayValue("MAN TGX for rent");
+    await userEvent.selectOptions(screen.getByLabelText("Registration status"), "UNREGISTERED");
+    await userEvent.selectOptions(screen.getByLabelText("Price type"), "NEGOTIABLE");
+
+    expect(screen.queryByLabelText("Registration expiry date")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Price amount")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Currency")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /save listing/i }));
+
+    await waitFor(() => {
+      expect(vehicleMarketplaceApi.updateVehicleMarketplaceListing).toHaveBeenCalledWith(
+        "listing_1",
+        expect.objectContaining({
+          currency: null,
+          isRegistered: false,
+          priceAmount: null,
+          registrationExpiresAt: null,
         }),
       );
     });

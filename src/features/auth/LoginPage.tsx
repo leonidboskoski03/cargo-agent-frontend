@@ -171,22 +171,24 @@ export function LoginPage() {
 
           <div className="mt-6 space-y-4">
             {mfaState ? (
-              <Field error={mfaForm.formState.errors.code} label="OTP code" required>
-                <OtpCodeInput
-                  autoFocus
-                  disabled={mfaMutation.isPending}
-                  onChange={(code) => mfaForm.setValue("code", code, { shouldDirty: true, shouldValidate: true })}
-                  value={mfaCode}
-                />
+              <>
+                <Field error={mfaForm.formState.errors.code} label="OTP code" required>
+                  <OtpCodeInput
+                    autoFocus
+                    disabled={mfaMutation.isPending}
+                    onChange={(code) => mfaForm.setValue("code", code, { shouldDirty: true, shouldValidate: true })}
+                    value={mfaCode}
+                  />
+                </Field>
                 <OtpResendButton
                   attemptsRemaining={mfaState.resendAttemptsRemaining}
-                  className="mt-4"
+                  className="flex flex-col items-center pt-2"
                   disabled={mfaMutation.isPending}
                   isPending={resendMfaMutation.isPending}
                   nextResendAt={mfaState.nextResendAt}
                   onResend={() => resendMfaMutation.mutate()}
                 />
-              </Field>
+              </>
             ) : (
               <>
                 <Field error={loginForm.formState.errors.email} label={t("fields.email")} required>
@@ -217,10 +219,12 @@ export function LoginPage() {
             )}
           </div>
 
-          <Button className="mt-6 w-full" disabled={loginMutation.isPending || mfaMutation.isPending} type="submit">
-            {mfaState ? "Verify and continue" : t("auth.login.submit")}
-            <ArrowRight className="size-4" />
-          </Button>
+          {!mfaState ? (
+            <Button className="mt-6 w-full" disabled={loginMutation.isPending || mfaMutation.isPending} type="submit">
+              {t("auth.login.submit")}
+              <ArrowRight className="size-4" />
+            </Button>
+          ) : null}
           {!mfaState ? (
             <>
               <Link className="mt-4 block text-center text-sm text-primary" to="/register">

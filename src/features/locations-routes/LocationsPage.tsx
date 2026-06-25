@@ -67,6 +67,13 @@ export function LocationsPage() {
     if (editing) editForm.reset(toForm(editing));
   }, [editForm, editing]);
 
+  useEffect(() => {
+    if (!deleted) return;
+
+    const timeout = window.setTimeout(() => setDeleted(null), 10_000);
+    return () => window.clearTimeout(timeout);
+  }, [deleted]);
+
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["locations"] });
   const createMutation = useAppMutation({ messages: { success: "Location created" }, mutationFn: createLocation, onSuccess: () => { form.reset(defaults); void refresh(); } });
   const updateMutation = useAppMutation({ messages: { success: "Location updated" }, mutationFn: (values: LocationFormValues) => updateLocation(editing?.id ?? "", values), onSuccess: () => { setEditing(null); editForm.reset(defaults); void refresh(); } });

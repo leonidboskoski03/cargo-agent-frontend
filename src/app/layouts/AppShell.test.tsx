@@ -149,7 +149,8 @@ describe("AppShell navigation", () => {
     renderShell("/fleet");
 
     await userEvent.click(screen.getByRole("button", { name: "Pin sidebar" }));
-    const searchInput = await screen.findByLabelText("Search sidebar");
+    await userEvent.click(await screen.findByRole("button", { name: "Search sidebar" }));
+    const searchInput = await screen.findByRole("textbox", { name: "Search sidebar" });
     fireEvent.change(searchInput, { target: { value: "licenses" } });
 
     const panel = screen.getByTestId("secondary-nav-panel");
@@ -171,6 +172,15 @@ describe("AppShell navigation", () => {
     expect(within(panel).getByRole("link", { name: /Company/i })).toBeInTheDocument();
     expect(within(panel).queryByRole("link", { name: /Team/i })).not.toBeInTheDocument();
     expect(within(panel).queryByRole("link", { name: /Audit logs/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps audit logs admin-only and release readiness out of product navigation", async () => {
+    renderShell("/company");
+    await userEvent.click(screen.getByRole("button", { name: "Pin sidebar" }));
+
+    const panel = await screen.findByTestId("secondary-nav-panel");
+    expect(within(panel).getByRole("link", { name: /Audit logs/i })).toHaveAttribute("href", "/audit-logs");
+    expect(within(panel).queryByRole("link", { name: /Release readiness/i })).not.toBeInTheDocument();
   });
 
   it("limits company driver sidebar to planning, company posts, and company", async () => {

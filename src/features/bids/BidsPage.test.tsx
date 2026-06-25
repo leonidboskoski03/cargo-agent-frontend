@@ -10,8 +10,10 @@ import { BidsPage } from "./BidsPage";
 const bidsApi = vi.hoisted(() => ({
   boostBid: vi.fn(),
   changeBidStatus: vi.fn(),
+  createBidReply: vi.fn(),
   deleteBid: vi.fn(),
   listBidActivities: vi.fn(),
+  listBidReplies: vi.fn(),
   listBids: vi.fn(),
   restoreBid: vi.fn(),
   updateBid: vi.fn(),
@@ -25,8 +27,10 @@ vi.mock("@/shared/api/modules/bids", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/shared/api/modules/bids")>()),
   boostBid: bidsApi.boostBid,
   changeBidStatus: bidsApi.changeBidStatus,
+  createBidReply: bidsApi.createBidReply,
   deleteBid: bidsApi.deleteBid,
   listBidActivities: bidsApi.listBidActivities,
+  listBidReplies: bidsApi.listBidReplies,
   listBids: bidsApi.listBids,
   restoreBid: bidsApi.restoreBid,
   updateBid: bidsApi.updateBid,
@@ -59,6 +63,16 @@ describe("BidsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAuthStore.setState({ status: "authenticated", user: adminUser });
+    bidsApi.createBidReply.mockResolvedValue({
+      authorCompanyId: "shipper_company",
+      authorUserId: "admin_1",
+      bidId: "bid_123456789",
+      createdAt: "2026-06-09T10:05:00.000Z",
+      id: "bid_reply_created",
+      message: "Early loading works.",
+      updatedAt: "2026-06-09T10:05:00.000Z",
+    });
+    bidsApi.listBidReplies.mockResolvedValue([]);
   });
 
   it("renders received bid actions for the post owner", async () => {
@@ -254,6 +268,55 @@ describe("BidsPage", () => {
     expect(screen.getByText(/long operational context/i)).toBeInTheDocument();
     expect(await screen.findByText("Bid created")).toBeInTheDocument();
     expect(screen.getAllByText(/240 km/i).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("sends a reply from the bid detail drawer", async () => {
+    bidsApi.listBids.mockResolvedValue([
+      {
+        carrierCompanyId: "carrier_company",
+        carrierCompany: { city: "Skopje", countryCode: "MK", id: "carrier_company", isVerified: false, name: "Carrier Co" },
+        createdAt: "2026-06-09T10:00:00.000Z",
+        createdByUserId: "carrier_admin",
+        currency: "EUR",
+        deletedAt: null,
+        estimatedDeliveryAt: null,
+        estimatedPickupAt: null,
+        id: "bid_123456789",
+        message: "Can cover this lane.",
+        offeredPriceAmount: "750",
+        post: {
+          cargoDescription: "Pallets",
+          companyId: "shipper_company",
+          currency: "EUR",
+          deletedAt: null,
+          id: "post_123456789",
+          priceAmount: null,
+          priceType: "REQUEST_QUOTE",
+          route: {
+            destinationLocation: { city: "Sofia", countryCode: "BG", id: "loc_2" },
+            distanceKm: 240,
+            estimatedDurationMinutes: 260,
+            id: "route_1",
+            originLocation: { city: "Skopje", countryCode: "MK", id: "loc_1" },
+          },
+          routeId: "route_1",
+          status: "OPEN",
+          title: "Skopje to Sofia",
+        },
+        postId: "post_123456789",
+        status: "PENDING",
+        updatedAt: "2026-06-09T10:00:00.000Z",
+      },
+    ]);
+    bidsApi.listBidActivities.mockResolvedValue([]);
+
+    renderWithProviders(<BidsPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /details/i }));
+    await userEvent.type(await screen.findByLabelText("Bid replies message"), "Early loading works.");
+    await userEvent.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(bidsApi.createBidReply).toHaveBeenCalledWith("bid_123456789", { message: "Early loading works." });
   });
 
   it("shows deleted sent bids in a dedicated view and restores owned bids", async () => {

@@ -61,7 +61,7 @@ describe("JobsPage", () => {
     useAuthStore.setState({ status: "authenticated", user: jobSeekerUser });
     jobApi.listJobApplications.mockResolvedValue([
       {
-        createdAt: "",
+        createdAt: "2026-06-14T10:00:00.000Z",
         createdByCompany: { id: "company_1", name: "Logi Trans" },
         createdByCompanyId: "company_1",
         createdByUserId: "company_user",
@@ -78,7 +78,7 @@ describe("JobsPage", () => {
         updatedAt: "",
       },
       {
-        createdAt: "",
+        createdAt: "2026-06-13T09:00:00.000Z",
         createdByCompany: { id: "company_2", name: "Closed Co" },
         createdByCompanyId: "company_2",
         createdByUserId: "company_user_2",
@@ -105,9 +105,22 @@ describe("JobsPage", () => {
     renderPage();
 
     expect(await screen.findByText("Driver for regional work")).toBeInTheDocument();
+    expect(screen.getByText("Best job matches")).toBeInTheDocument();
+    expect(screen.getByText("Posted Jun 14, 2026")).toBeInTheDocument();
     expect(screen.getAllByText("Open").length).toBeGreaterThan(0);
     expect(screen.getByText("Logi Trans")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /create listing/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /^filters$/i }));
+    expect(await screen.findByRole("dialog", { name: /job marketplace filters/i })).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Status"), "CLOSED");
+    await userEvent.click(screen.getByRole("button", { name: /^apply$/i }));
+
+    expect(screen.queryByText("Driver for regional work")).not.toBeInTheDocument();
+    expect(screen.getByText("Closed listing")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /^clear$/i }));
+    expect(await screen.findByText("Driver for regional work")).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText("Search jobs"), "closed");
 
@@ -160,6 +173,7 @@ describe("JobsPage", () => {
     renderPage("mine");
 
     expect(await screen.findByText("Owner listing")).toBeInTheDocument();
+    expect(screen.getByText("Listing registry")).toBeInTheDocument();
     expect(jobApi.listMyJobApplications).toHaveBeenCalledWith({ deleted: "active" });
     expect(screen.queryByText("Deleted listing")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /edit owner listing/i })).toBeInTheDocument();

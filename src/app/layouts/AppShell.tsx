@@ -19,7 +19,6 @@ import {
   Search,
   Send,
   Settings,
-  ShieldCheck,
   Handshake,
   Truck,
   UserRound,
@@ -182,7 +181,6 @@ const navSections: NavSection[] = [
       { description: "Plans and subscription state", icon: CreditCard, label: "Billing", to: "/billing" },
       { description: "Marketplace credit wallet", icon: WalletCards, label: "Credits", to: "/company-credits" },
       { adminOnly: true, description: "Admin-only platform event log", icon: ScrollText, label: "Audit logs", to: "/audit-logs" },
-      { adminOnly: true, description: "Release gates and provider status", icon: ShieldCheck, label: "Release readiness", to: "/release-readiness" },
     ],
     label: "Company",
     quickAction: { adminOnly: true, description: "Invite and manage users", icon: Plus, label: "Manage team", to: "/team" },
@@ -254,10 +252,13 @@ export function AppShell() {
   const toggleSecondaryPanel = useUiStore((state) => state.toggleSecondaryPanel);
   const [languageOpen, setLanguageOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [notificationPreviewOpen, setNotificationPreviewOpen] = useState(false);
   const [panelSearch, setPanelSearch] = useState("");
+  const [panelSearchOpen, setPanelSearchOpen] = useState(false);
   const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const hoverCloseTimeout = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const notificationCloseTimeout = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const isAdmin = user?.role === "COMPANY_ADMIN";
   const visibleSections = useMemo(() => navSections.filter((section) => canSeeSection(section, user?.role, isAdmin)), [isAdmin, user?.role]);
   const activeSection = visibleSections.find((section) => section.id === activeNavSectionId) ?? sectionForPath(location.pathname, visibleSections);
@@ -307,6 +308,7 @@ export function AppShell() {
   useEffect(
     () => () => {
       if (hoverCloseTimeout.current) window.clearTimeout(hoverCloseTimeout.current);
+      if (notificationCloseTimeout.current) window.clearTimeout(notificationCloseTimeout.current);
     },
     [],
   );
@@ -330,7 +332,6 @@ export function AppShell() {
     if (!needle) return true;
     return `${item.label} ${item.description ?? ""}`.toLowerCase().includes(needle);
   });
-  const quickAction = displayedSection?.quickAction && canSeeItem(displayedSection.quickAction, user?.role, isAdmin) && !(user?.role === "COMPANY_DRIVER" && displayedSection.id === "posts") ? displayedSection.quickAction : null;
   const leftOffset = secondaryPanelOpen ? "lg:pl-[180px]" : "lg:pl-[86px]";
   const accountLink = user?.role === "JOB_SEEKER"
     ? { label: "Profile", to: "/job-profile" }
@@ -359,11 +360,25 @@ export function AppShell() {
     }
   };
 
+  const openNotificationPreview = () => {
+    if (notificationCloseTimeout.current) {
+      window.clearTimeout(notificationCloseTimeout.current);
+      notificationCloseTimeout.current = null;
+    }
+    setNotificationPreviewOpen(true);
+  };
+
+  const scheduleNotificationPreviewClose = () => {
+    if (notificationCloseTimeout.current) window.clearTimeout(notificationCloseTimeout.current);
+    notificationCloseTimeout.current = window.setTimeout(() => setNotificationPreviewOpen(false), 260);
+  };
+
   const previewSection = (sectionId: string) => {
     if (secondaryPanelOpen) return;
     cancelHoverClose();
     setHoveredSectionId(sectionId);
     setPanelSearch("");
+    setPanelSearchOpen(false);
   };
 
   const schedulePreviewClose = () => {
@@ -375,6 +390,7 @@ export function AppShell() {
   const openSection = (section: NavSection) => {
     setActiveNavSection(section.id);
     setPanelSearch("");
+    setPanelSearchOpen(false);
     void navigate(sectionDefaultTo(section, user?.role));
   };
 
@@ -388,6 +404,7 @@ export function AppShell() {
             onClick={() => {
               setHoveredSectionId(null);
               setPanelSearch("");
+              setPanelSearchOpen(false);
               toggleSecondaryPanel();
             }}
             type="button"
@@ -445,26 +462,58 @@ export function AppShell() {
           <div className="flex h-full flex-col overflow-hidden rounded-xl" data-testid="secondary-nav-panel">
             <div className="border-b border-border p-4">
               <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="truncate text-lg font-semibold tracking-normal">{displayedSection.label}</h2>
-                </div>
+                {panelSearchOpen ? (
+                  <div className="relative min-w-0 flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                    <Input
+                      aria-label="Search sidebar"
+                      autoFocus
+                      className="h-9 rounded-lg pl-9 pr-9 text-sm"
+                      onChange={(event) => setPanelSearch(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          setPanelSearch("");
+                          setPanelSearchOpen(false);
+                        }
+                      }}
+                      placeholder="Search sidebar..."
+                      value={panelSearch}
+                    />
+                    {panelSearch ? (
+                      <button
+                        aria-label="Clear sidebar search"
+                        className="absolute right-2 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded-full bg-surface-pearl text-muted outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-slate-300"
+                        onClick={() => setPanelSearch("")}
+                        type="button"
+                      >
+                        <X className="size-3" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="min-w-0">
+                    <h2 className="truncate text-lg font-semibold tracking-normal">{displayedSection.label}</h2>
+                  </div>
+                )}
                 <div className="flex items-center">
                   <button
-                      aria-label="Close sidebar"
+                      aria-label={panelSearchOpen ? "Close sidebar search" : "Search sidebar"}
                       className="grid size-8 place-items-center rounded-lg text-muted outline-none transition hover:bg-surface-pearl hover:text-foreground focus-visible:ring-2 focus-visible:ring-slate-300"
                       onClick={() => {
-                        setHoveredSectionId(null);
-                        closeSecondaryPanel();
+                        setPanelSearch("");
+                        setPanelSearchOpen((current) => !current);
                       }}
                       type="button"
                   >
-                    <Search className="size-4" aria-hidden="true" />
+                    {panelSearchOpen ? <X className="size-4" aria-hidden="true" /> : <Search className="size-4" aria-hidden="true" />}
                   </button>
                   <button
                     aria-label="Close sidebar"
                     className="grid size-8 place-items-center rounded-lg text-muted outline-none transition hover:bg-surface-pearl hover:text-foreground focus-visible:ring-2 focus-visible:ring-slate-300"
                     onClick={() => {
                       setHoveredSectionId(null);
+                      setPanelSearch("");
+                      setPanelSearchOpen(false);
                       closeSecondaryPanel();
                     }}
                     type="button"
@@ -485,41 +534,8 @@ export function AppShell() {
                   {/*) : null}*/}
                 </div>
               </div>
-              <div className="relative mt-4">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden="true" />
-                <Input
-                  aria-label="Search sidebar"
-                  className="h-9 rounded-lg pl-9 pr-9 text-sm"
-                  onChange={(event) => setPanelSearch(event.target.value)}
-                  placeholder="Search sidebar..."
-                  value={panelSearch}
-                />
-                {panelSearch ? (
-                  <button
-                    aria-label="Clear sidebar search"
-                    className="absolute right-2 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded-full bg-surface-pearl text-muted outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-slate-300"
-                    onClick={() => setPanelSearch("")}
-                    type="button"
-                  >
-                    <X className="size-3" aria-hidden="true" />
-                  </button>
-                ) : null}
-              </div>
             </div>
             <div className="flex-1 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {quickAction ? (
-                <NavLink
-                  className="mb-3 flex items-center gap-3 rounded-lg border border-border bg-surface-pearl px-3 py-2.5 text-sm font-semibold transition hover:border-primary/40 hover:bg-card focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
-                  to={quickAction.to}
-                  onClick={() => {
-                    setHoveredSectionId(null);
-                    setPanelSearch("");
-                  }}
-                >
-                  <quickAction.icon className="size-4 text-primary" aria-hidden="true" />
-                  <span>{quickAction.label}</span>
-                </NavLink>
-              ) : null}
               {filteredPanelItems.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-border bg-surface-pearl p-4 text-sm text-muted">No matching shortcuts</div>
               ) : (
@@ -538,6 +554,7 @@ export function AppShell() {
                       onClick={() => {
                         setHoveredSectionId(null);
                         setPanelSearch("");
+                        setPanelSearchOpen(false);
                       }}
                     >
                       {({ isActive }) => (
@@ -672,7 +689,13 @@ export function AppShell() {
                 </div>
               ) : null}
             </div>
-            <div className="group relative">
+            <div
+              className="relative"
+              onBlur={scheduleNotificationPreviewClose}
+              onFocus={openNotificationPreview}
+              onMouseEnter={openNotificationPreview}
+              onMouseLeave={scheduleNotificationPreviewClose}
+            >
               <NavLink
                 aria-label={t("nav.notifications")}
                 className="relative grid size-9 place-items-center rounded-lg border border-border bg-card text-foreground shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
@@ -681,24 +704,26 @@ export function AppShell() {
                 <Bell className="size-[15px]" aria-hidden="true" />
                 {unreadCount ? <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-danger" /> : null}
               </NavLink>
-              <div className="pointer-events-none absolute right-0 top-11 z-30 hidden w-72 rounded-xl border border-border bg-card p-3 text-left shadow-lg group-hover:block group-focus-within:block">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <p className="text-xs font-semibold uppercase text-muted">Latest notifications</p>
-                  <span className="text-xs text-muted">{unreadCount} unread</span>
-                </div>
-                {latestNotifications.length === 0 ? (
-                  <p className="rounded-lg bg-surface-pearl px-3 py-2 text-sm text-muted">No notifications yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {latestNotifications.slice(0, 4).map((notification) => (
-                      <div className="rounded-lg bg-surface-pearl px-3 py-2" key={notification.id}>
-                        <p className="truncate text-sm font-semibold text-foreground">{notification.title}</p>
-                        <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted">{notification.body}</p>
-                      </div>
-                    ))}
+              {notificationPreviewOpen ? (
+                <div className="absolute right-0 top-11 z-30 max-h-[min(26rem,calc(100vh-4rem))] w-[min(18rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-border bg-card p-3 text-left shadow-lg">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="text-xs font-semibold uppercase text-muted">Latest notifications</p>
+                    <span className="text-xs text-muted">{unreadCount} unread</span>
                   </div>
-                )}
-              </div>
+                  {latestNotifications.length === 0 ? (
+                    <p className="rounded-lg bg-surface-pearl px-3 py-2 text-sm text-muted">No notifications yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {latestNotifications.slice(0, 4).map((notification) => (
+                        <div className="rounded-lg bg-surface-pearl px-3 py-2" key={notification.id}>
+                          <p className="truncate text-sm font-semibold text-foreground">{notification.title}</p>
+                          <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted">{notification.body}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
             <div className="relative">
               <button

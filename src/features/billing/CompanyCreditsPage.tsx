@@ -92,12 +92,18 @@ export function CompanyCreditsPage() {
       {checkoutMutation.error ? (
         <ErrorState description={companyCreditCheckoutErrorDescription()} error={checkoutMutation.error} title="Unable to start checkout" />
       ) : null}
-      <section className="grid gap-4 lg:grid-cols-4">
-        <Surface><WalletCards className="size-5 text-primary" /><h2 className="mt-3 text-xl font-semibold">{wallet?.balanceCredits ?? 0} credits</h2><p className="mt-1 text-sm text-muted">Company wallet balance</p></Surface>
-        <Surface><CreditCard className="size-5 text-primary" /><h2 className="mt-3 text-xl font-semibold">{usage?.quotas.jobPosts.remaining ?? 0} job posts</h2><p className="mt-1 text-sm text-muted">{usage?.quotas.jobPosts.creditCostPerAction ?? 2} credits after quota</p></Surface>
-        <Surface><CreditCard className="size-5 text-primary" /><h2 className="mt-3 text-xl font-semibold">{usage?.quotas.vehicleListings.remaining ?? 0} vehicle listings</h2><p className="mt-1 text-sm text-muted">{usage?.quotas.vehicleListings.creditCostPerAction ?? 3} credits after quota</p></Surface>
-        <Surface><CreditCard className="size-5 text-primary" /><h2 className="mt-3 text-xl font-semibold">{usage?.quotas.transportPosts.creditCostPerAction ?? 2} credits</h2><p className="mt-1 text-sm text-muted">Transport posts after active-post plan quota</p></Surface>
-      </section>
+      <Surface>
+        <div>
+          <h2 className="text-xl font-semibold">Wallet overview</h2>
+          <p className="mt-1 text-sm text-muted">Balance and plan quota are checked before credits are spent.</p>
+        </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-4">
+          <div className="rounded-lg border border-border bg-surface-pearl p-4"><WalletCards className="size-5 text-primary" /><h3 className="mt-3 text-xl font-semibold">{wallet?.balanceCredits ?? 0} credits</h3><p className="mt-1 text-sm text-muted">Company wallet balance</p></div>
+          <div className="rounded-lg border border-border bg-surface-pearl p-4"><CreditCard className="size-5 text-primary" /><h3 className="mt-3 text-xl font-semibold">{usage?.quotas.jobPosts.remaining ?? 0} job posts</h3><p className="mt-1 text-sm text-muted">{usage?.quotas.jobPosts.creditCostPerAction ?? 2} credits after quota</p></div>
+          <div className="rounded-lg border border-border bg-surface-pearl p-4"><CreditCard className="size-5 text-primary" /><h3 className="mt-3 text-xl font-semibold">{usage?.quotas.vehicleListings.remaining ?? 0} vehicle listings</h3><p className="mt-1 text-sm text-muted">{usage?.quotas.vehicleListings.creditCostPerAction ?? 3} credits after quota</p></div>
+          <div className="rounded-lg border border-border bg-surface-pearl p-4"><CreditCard className="size-5 text-primary" /><h3 className="mt-3 text-xl font-semibold">{usage?.quotas.transportPosts.creditCostPerAction ?? 2} credits</h3><p className="mt-1 text-sm text-muted">Transport posts after active-post plan quota</p></div>
+        </div>
+      </Surface>
 
       <Surface>
         <h2 className="text-xl font-semibold">Credit packs</h2>
@@ -122,24 +128,30 @@ export function CompanyCreditsPage() {
         )}
       </Surface>
 
-      {transactions.length === 0 ? (
-        <EmptyState description="Company credit purchases, spends, refunds, and adjustments will appear here." title="No transactions yet" />
-      ) : (
-        <Table>
-          <thead><tr><Th>Type</Th><Th>Amount</Th><Th>Balance after</Th><Th>Reason</Th><Th>Date</Th></tr></thead>
-          <tbody>
-            {transactions.map((transaction) => (
-              <tr key={transaction.id}>
-                <Td>{humanizeEnum(transaction.type)}</Td>
-                <Td>{transaction.amountCredits}</Td>
-                <Td>{transaction.balanceAfter}</Td>
-                <Td>{humanizeEnum(transaction.reasonCode ?? "UNKNOWN")}</Td>
-                <Td>{transaction.createdAt.slice(0, 10)}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-      )}
+      <Surface>
+        <h2 className="text-xl font-semibold">Transaction history</h2>
+        <p className="mt-1 text-sm text-muted">Purchases, spends, refunds, and manual adjustments update the wallet ledger.</p>
+        <div className="mt-4">
+          {transactions.length === 0 ? (
+            <EmptyState description="Company credit purchases, spends, refunds, and adjustments will appear here." title="No transactions yet" />
+          ) : (
+            <Table>
+              <thead><tr><Th>Type</Th><Th>Amount</Th><Th>Balance after</Th><Th>Reason</Th><Th>Date</Th></tr></thead>
+              <tbody>
+                {transactions.map((transaction) => (
+                  <tr key={transaction.id}>
+                    <Td>{humanizeEnum(transaction.type)}</Td>
+                    <Td>{transaction.amountCredits}</Td>
+                    <Td>{transaction.balanceAfter}</Td>
+                    <Td>{humanizeEnum(transaction.reasonCode ?? "UNKNOWN")}</Td>
+                    <Td>{transaction.createdAt.slice(0, 10)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </div>
+      </Surface>
     </div>
   );
 }

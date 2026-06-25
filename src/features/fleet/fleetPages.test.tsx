@@ -21,6 +21,10 @@ const documentApi = vi.hoisted(() => ({
   uploadDocument: vi.fn(),
 }));
 
+const geoApi = vi.hoisted(() => ({
+  listSupportedCountries: vi.fn(),
+}));
+
 const licenseApi = vi.hoisted(() => ({
   createLicense: vi.fn(),
   deleteLicense: vi.fn(),
@@ -45,6 +49,11 @@ const vehicleApi = vi.hoisted(() => ({
 vi.mock("@/shared/api/modules/documents", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/shared/api/modules/documents")>()),
   uploadDocument: documentApi.uploadDocument,
+}));
+
+vi.mock("@/shared/api/modules/geo", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/shared/api/modules/geo")>()),
+  listSupportedCountries: geoApi.listSupportedCountries,
 }));
 
 vi.mock("@/shared/api/modules/licenses", async (importOriginal) => ({
@@ -121,7 +130,9 @@ function renderWithQuery(ui: ReactElement = <FleetVehiclesPage />) {
 describe("fleet pages", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    geoApi.listSupportedCountries.mockResolvedValue([{ code: "MK", name: "North Macedonia" }]);
     vehicleApi.listVehicles.mockResolvedValue([]);
+    vehicleApi.createVehicle.mockResolvedValue({});
     vehicleApi.restoreVehicle.mockResolvedValue({});
     userApi.listUsers.mockResolvedValue([adminUser, driverUser]);
     assignmentApi.listVehicleAssignments.mockResolvedValue([]);
@@ -140,15 +151,37 @@ describe("fleet pages", () => {
 
     renderWithQuery();
 
-    expect(await screen.findByRole("heading", { name: "Add vehicle" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Add vehicle or trailer" })).toBeInTheDocument();
     expect(screen.getByText("Identity")).toBeInTheDocument();
     expect(screen.getByText("Specs")).toBeInTheDocument();
     expect(screen.getByText("Media and documents")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/body type/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/capacity kg/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/volume m3/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^refrigerated$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^hazmat$/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/active vehicle/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/truck image url/i)).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/document urls/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/vehicle photo/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/vehicle documents/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /add vehicle/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add fleet asset/i })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText(/^type$/i), "TRAILER");
+    await userEvent.type(screen.getByLabelText(/plate number/i), "TRL-100");
+    await userEvent.selectOptions(screen.getByLabelText(/^country$/i), "MK");
+    await userEvent.click(screen.getByRole("button", { name: /add fleet asset/i }));
+
+    await waitFor(() => {
+      expect(vehicleApi.createVehicle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          countryOfRegistration: "MK",
+          plateNumber: "TRL-100",
+          vehicleType: "TRAILER",
+        }),
+        expect.anything(),
+      );
+    });
   });
 
   it("keeps drivers in read-only vehicle mode", async () => {
@@ -157,7 +190,7 @@ describe("fleet pages", () => {
     renderWithQuery();
 
     expect(await screen.findByRole("heading", { name: "Read-only vehicle view" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /add vehicle/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add fleet asset/i })).not.toBeInTheDocument();
   });
 
   it("shows deleted fleet vehicles in a dedicated admin view and restores them", async () => {
@@ -169,6 +202,7 @@ describe("fleet pages", () => {
           createdAt: "",
           deletedAt: "2026-06-12T00:00:00.000Z",
           id: "vehicle_deleted",
+          imageUrl: "https://cdn.test/vehicle-deleted.jpg",
           isActive: false,
           plateNumber: "SK-999-DE",
           updatedAt: "",
@@ -179,6 +213,7 @@ describe("fleet pages", () => {
           createdAt: "",
           deletedAt: null,
           id: "vehicle_active",
+          imageUrl: "https://cdn.test/vehicle-active.jpg",
           isActive: true,
           plateNumber: "SK-100-AA",
           updatedAt: "",
@@ -189,11 +224,17 @@ describe("fleet pages", () => {
     renderWithQuery();
 
     expect((await screen.findAllByText(/SK-100-AA/)).length).toBeGreaterThan(0);
+    expect(screen.getByAltText("SK-100-AA vehicle")).toHaveAttribute("src", "https://cdn.test/vehicle-active.jpg");
+    expect(screen.getByRole("button", { name: /edit sk-100-aa/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete sk-100-aa/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^delete$/i })).not.toBeInTheDocument();
     expect(vehicleApi.listVehicles).toHaveBeenCalledWith({ deleted: "active" });
 
     await userEvent.click(screen.getByRole("button", { name: /^deleted$/i }));
 
     expect(await screen.findByText(/SK-999-DE/)).toBeInTheDocument();
+    expect(screen.getByAltText("SK-999-DE vehicle")).toHaveAttribute("src", "https://cdn.test/vehicle-deleted.jpg");
     expect(vehicleApi.listVehicles).toHaveBeenCalledWith({ deleted: "only" });
     await userEvent.click(screen.getByRole("button", { name: /restore sk-999-de/i }));
 

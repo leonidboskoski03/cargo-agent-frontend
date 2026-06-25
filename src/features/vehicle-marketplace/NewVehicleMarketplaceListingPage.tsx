@@ -8,7 +8,7 @@ import { createVehicleMarketplaceListing, type VehicleMarketplaceListingInput } 
 import { listVehicles } from "@/shared/api/modules/vehicles";
 import { Button } from "@/shared/components/ui/Button";
 import { FileUploadControl } from "@/shared/components/ui/FileUploadControl";
-import { Checkbox, Field, Input, Select, Textarea } from "@/shared/components/ui/Form";
+import { Field, Input, Select, Textarea } from "@/shared/components/ui/Form";
 import { ErrorState, PageHeader, Surface } from "@/shared/components/ui/Page";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { fileToBase64 } from "@/shared/lib/files";
@@ -17,7 +17,7 @@ import { useAuthStore } from "@/features/auth/authStore";
 import type { MarketplaceImage } from "./vehicleMarketplaceMedia";
 
 const vehicleTypes = ["TRUCK", "TRAILER", "VAN"] as const;
-const bodyTypes = ["", "TILT", "BOX", "FLATBED", "REEFER", "TANKER"] as const;
+const currencyOptions = ["EUR", "MKD", "USD", "BGN", "RSD", "ALL", "TRY", "RON", "BAM"];
 
 export function NewVehicleMarketplaceListingPage() {
   const navigate = useNavigate();
@@ -27,24 +27,21 @@ export function NewVehicleMarketplaceListingPage() {
   const vehiclesQuery = useQuery({ queryFn: () => listVehicles(), queryKey: ["vehicles", "marketplace-source"] });
   const countriesQuery = useQuery({ queryFn: listSupportedCountries, queryKey: ["geo", "countries"] });
   const [form, setForm] = useState({
-    bodyType: "",
     brand: "",
-    capacityKg: "",
     city: "",
     countryCode: "MK",
     currency: "EUR",
     description: "",
-    hazmatCertified: false,
     intent: "SALE",
     model: "",
     priceAmount: "",
-    refrigerated: false,
+    priceMode: "FIXED",
+    registrationExpiresAt: "",
+    registrationStatus: "REGISTERED",
     sourceType: initialVehicleId ? "FLEET_VEHICLE" : "STANDALONE",
-    status: "PUBLISHED",
     title: "",
     vehicleId: initialVehicleId,
     vehicleType: "TRUCK",
-    volumeM3: "",
     year: "",
   });
   const [images, setImages] = useState<MarketplaceImage[]>([]);
@@ -88,23 +85,19 @@ export function NewVehicleMarketplaceListingPage() {
     const input: VehicleMarketplaceListingInput = {
       city: form.city.trim(),
       countryCode: form.countryCode.toUpperCase(),
-      currency: form.currency.trim().toUpperCase() || undefined,
       description: form.description.trim() || undefined,
-      hazmatCertified: form.hazmatCertified,
       intent: form.intent as VehicleMarketplaceListingInput["intent"],
-      priceAmount: form.priceAmount || undefined,
-      refrigerated: form.refrigerated,
       imageUrlsJson: images.length ? images : undefined,
       sourceType: form.sourceType as VehicleMarketplaceListingInput["sourceType"],
-      status: form.status as VehicleMarketplaceListingInput["status"],
       title: form.title.trim(),
       vehicleType: (selectedVehicle?.vehicleType ?? form.vehicleType) as VehicleMarketplaceListingInput["vehicleType"],
-      bodyType: form.bodyType ? (form.bodyType as VehicleMarketplaceListingInput["bodyType"]) : undefined,
       brand: form.brand.trim() || undefined,
-      capacityKg: form.capacityKg ? Number(form.capacityKg) : undefined,
       model: form.model.trim() || undefined,
+      ...(form.priceMode === "FIXED" && form.currency.trim() ? { currency: form.currency.trim().toUpperCase() } : {}),
+      ...(form.priceMode === "FIXED" && form.priceAmount ? { priceAmount: form.priceAmount } : {}),
+      isRegistered: form.registrationStatus === "REGISTERED",
+      registrationExpiresAt: form.registrationStatus === "REGISTERED" && form.registrationExpiresAt ? form.registrationExpiresAt : undefined,
       vehicleId: form.sourceType === "FLEET_VEHICLE" ? form.vehicleId : undefined,
-      volumeM3: form.volumeM3 || undefined,
       year: form.year ? Number(form.year) : undefined,
     };
     mutation.mutate(input);
@@ -120,9 +113,9 @@ export function NewVehicleMarketplaceListingPage() {
       <Surface className="flex items-start gap-3 border-blue-100 bg-blue-50">
         <CreditCard className="mt-0.5 size-5 text-primary" aria-hidden="true" />
         <div>
-          <p className="text-sm font-semibold text-foreground">Drafts are free; published listings use quota first.</p>
+          <p className="text-sm font-semibold text-foreground">New listings are saved as drafts first.</p>
           <p className="mt-1 text-sm leading-6 text-muted">
-            {user?.role === "JOB_SEEKER" ? "Job seeker vehicle listings cost 3 credits after the included monthly quota." : "Company vehicle listings cost 3 company credits after the included monthly quota."}
+            Publish from the listing details when the record is ready. {user?.role === "JOB_SEEKER" ? "Job seeker vehicle listings cost 3 credits after the included monthly quota." : "Company vehicle listings cost 3 company credits after the included monthly quota."}
           </p>
         </div>
       </Surface>
@@ -178,41 +171,43 @@ export function NewVehicleMarketplaceListingPage() {
           <Field label="Model">
             <Input disabled={form.sourceType === "FLEET_VEHICLE"} onChange={(event) => update("model", event.target.value)} placeholder={selectedVehicle?.model ?? "TGX"} value={form.model} />
           </Field>
-          <Field label="Body type">
-            <Select onChange={(event) => update("bodyType", event.target.value)} value={form.bodyType}>
-              {bodyTypes.map((type) => <option key={type || "none"} value={type}>{type ? humanizeEnum(type) : "Not set"}</option>)}
-            </Select>
-          </Field>
           <Field label="Year">
             <Input inputMode="numeric" onChange={(event) => update("year", event.target.value)} placeholder="2023" value={form.year} />
           </Field>
-          <Field label="Price amount">
-            <Input inputMode="decimal" onChange={(event) => update("priceAmount", event.target.value)} placeholder="18000" value={form.priceAmount} />
-          </Field>
-          <Field label="Currency">
-            <Input maxLength={3} onChange={(event) => update("currency", event.target.value.toUpperCase())} value={form.currency} />
-          </Field>
-          <Field label="Capacity kg">
-            <Input inputMode="numeric" onChange={(event) => update("capacityKg", event.target.value)} placeholder="12000" value={form.capacityKg} />
-          </Field>
-          <Field label="Volume m3">
-            <Input inputMode="decimal" onChange={(event) => update("volumeM3", event.target.value)} placeholder="45.5" value={form.volumeM3} />
-          </Field>
-          <div className="rounded-lg bg-surface-pearl p-4 lg:col-span-2">
-            <div className="flex flex-wrap gap-5">
-              <Checkbox checked={form.refrigerated} onChange={(event) => update("refrigerated", event.target.checked)}>Refrigerated</Checkbox>
-              <Checkbox checked={form.hazmatCertified} onChange={(event) => update("hazmatCertified", event.target.checked)}>Hazmat certified</Checkbox>
-            </div>
-          </div>
-          <Field label="Description">
-            <Textarea onChange={(event) => update("description", event.target.value)} placeholder="Availability, documents, condition, and usage notes." value={form.description} />
-          </Field>
-          <Field label="Publish state">
-            <Select onChange={(event) => update("status", event.target.value)} value={form.status}>
-              <option value="PUBLISHED">Published</option>
-              <option value="DRAFT">Draft</option>
+          <Field label="Registration status" required>
+            <Select aria-label="Registration status" onChange={(event) => update("registrationStatus", event.target.value)} value={form.registrationStatus}>
+              <option value="REGISTERED">Registered</option>
+              <option value="UNREGISTERED">Unregistered</option>
             </Select>
           </Field>
+          {form.registrationStatus === "REGISTERED" ? (
+            <Field label="Registration expiry date">
+              <Input onChange={(event) => update("registrationExpiresAt", event.target.value)} type="date" value={form.registrationExpiresAt} />
+            </Field>
+          ) : null}
+          <Field label="Price type" required>
+            <Select aria-label="Price type" onChange={(event) => update("priceMode", event.target.value)} value={form.priceMode}>
+              <option value="FIXED">Fixed price</option>
+              <option value="NEGOTIABLE">Negotiable</option>
+            </Select>
+          </Field>
+          {form.priceMode === "FIXED" ? (
+            <>
+              <Field label="Price amount">
+                <Input inputMode="decimal" onChange={(event) => update("priceAmount", event.target.value)} placeholder="18000" value={form.priceAmount} />
+              </Field>
+              <Field label="Currency">
+                <Select onChange={(event) => update("currency", event.target.value)} value={form.currency}>
+                  {currencyOptions.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                </Select>
+              </Field>
+            </>
+          ) : null}
+          <div className="lg:col-span-2">
+            <Field label="Description">
+              <Textarea className="min-h-36 resize-none" onChange={(event) => update("description", event.target.value)} placeholder="Availability, documents, condition, and usage notes." value={form.description} />
+            </Field>
+          </div>
           <div className="space-y-3 lg:col-span-2">
             <div>
               <h2 className="text-base font-semibold">Vehicle photos</h2>

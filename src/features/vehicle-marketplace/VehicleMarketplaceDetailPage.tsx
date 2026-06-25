@@ -1,16 +1,16 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Calendar, ChevronLeft, ChevronRight, Gauge, MapPin, Pencil, Send, Trash2, Truck } from "lucide-react";
+import { ArrowLeft, BadgeDollarSign, Building2, Calendar, ChevronLeft, ChevronRight, MapPin, Pencil, Send, Trash2, Truck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { createVehicleMarketplaceInquiry, deleteVehicleMarketplaceListing, getVehicleMarketplaceListing, updateVehicleMarketplaceListing } from "@/shared/api/modules/vehicleMarketplace";
 import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge } from "@/shared/components/ui/DataTable";
-import { Field, Input, Select, Textarea } from "@/shared/components/ui/Form";
+import { Field, Select, Textarea } from "@/shared/components/ui/Form";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { humanizeEnum } from "@/shared/lib/formatters";
 import { useAuthStore } from "@/features/auth/authStore";
-import { formatIntent, formatListingLocation, formatListingOwner, formatListingPrice, formatVehicleSpec, marketplaceStatusTone } from "./vehicleMarketplaceFormatters";
+import { formatIntent, formatListingLocation, formatListingOwner, formatListingPrice, formatRegistrationStatus, formatVehicleSpec, marketplaceStatusTone } from "./vehicleMarketplaceFormatters";
 import { listingImages } from "./vehicleMarketplaceMedia";
 
 const ownerStatuses = ["DRAFT", "PUBLISHED", "PAUSED", "SOLD", "RENTED", "CLOSED"] as const;
@@ -22,14 +22,12 @@ export function VehicleMarketplaceDetailPage() {
   const user = useAuthStore((state) => state.user);
   const query = useQuery({ queryFn: () => getVehicleMarketplaceListing(listingId), queryKey: ["vehicle-marketplace", listingId] });
   const [message, setMessage] = useState("");
-  const [contactEmail, setContactEmail] = useState("");
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const inquiryMutation = useAppMutation({
     messages: { success: "Inquiry sent" },
-    mutationFn: () => createVehicleMarketplaceInquiry(listingId, { contactEmail: contactEmail.trim() || undefined, message }),
+    mutationFn: () => createVehicleMarketplaceInquiry(listingId, { message }),
     onSuccess: () => {
       setMessage("");
-      setContactEmail("");
       void queryClient.invalidateQueries({ queryKey: ["vehicle-marketplace", "inquiries"] });
     },
   });
@@ -144,19 +142,27 @@ export function VehicleMarketplaceDetailPage() {
               <SpecPill icon={Truck} label="Vehicle" value={formatVehicleSpec(listing)} />
               <SpecPill icon={MapPin} label="Location" value={formatListingLocation(listing)} />
               <SpecPill icon={Calendar} label="Year" value={listing.year ? String(listing.year) : "Not set"} />
-              <SpecPill icon={Gauge} label="Capacity" value={listing.capacityKg ? `${listing.capacityKg} kg` : "Not set"} />
+              <SpecPill icon={BadgeDollarSign} label="Price" value={formatListingPrice(listing)} />
             </div>
           </Surface>
 
           <Surface>
             <h2 className="text-xl font-semibold">Vehicle information</h2>
+            <div className="mt-5 rounded-lg border border-border bg-surface-pearl p-4">
+              <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase text-muted">
+                <Building2 className="size-4 text-primary" aria-hidden="true" />
+                Seller
+              </p>
+              <p className="mt-2 text-2xl font-semibold tracking-normal text-foreground">{formatListingOwner(listing)}</p>
+              <p className="mt-1 text-sm text-muted">{formatListingLocation(listing)}</p>
+            </div>
             <dl className="mt-5 grid gap-4 md:grid-cols-2">
+              <InfoItem label="Price" value={formatListingPrice(listing)} />
               <InfoItem label="Vehicle type" value={`${humanizeEnum(listing.vehicleType)}${listing.bodyType ? ` / ${humanizeEnum(listing.bodyType)}` : ""}`} />
               <InfoItem label="Brand / model" value={[listing.brand, listing.model].filter(Boolean).join(" ") || "Not set"} />
-              <InfoItem label="Price" value={formatListingPrice(listing)} />
-              <InfoItem label="Volume" value={listing.volumeM3 ? `${listing.volumeM3} m3` : "Not set"} />
-              <InfoItem label="Equipment" value={[listing.refrigerated ? "Refrigerated" : null, listing.hazmatCertified ? "Hazmat certified" : null].filter(Boolean).join(", ") || "None listed"} />
-              <InfoItem label="Seller" value={formatListingOwner(listing)} />
+              <InfoItem label="Year" value={listing.year ? String(listing.year) : "Not set"} />
+              <InfoItem label="Registration" value={formatRegistrationStatus(listing)} />
+              <InfoItem label="Location" value={formatListingLocation(listing)} />
             </dl>
           </Surface>
 
@@ -203,9 +209,6 @@ export function VehicleMarketplaceDetailPage() {
               </div>
               <Field label="Message" required>
                 <Textarea onChange={(event) => setMessage(event.target.value)} placeholder="Is this truck available next month?" value={message} />
-              </Field>
-              <Field label="Contact email">
-                <Input onChange={(event) => setContactEmail(event.target.value)} placeholder="you@company.com" value={contactEmail} />
               </Field>
               <Button disabled={inquiryMutation.isPending || message.trim().length < 3} type="submit">
                 <Send className="size-4" aria-hidden="true" />

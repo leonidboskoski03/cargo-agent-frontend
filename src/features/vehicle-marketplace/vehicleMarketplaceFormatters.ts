@@ -35,6 +35,15 @@ export function formatListingPrice(listing?: Pick<VehicleMarketplaceListing, "cu
   return `${listing.priceAmount} ${listing.currency ?? "EUR"}`;
 }
 
+export function formatRegistrationStatus(listing?: Pick<VehicleMarketplaceListing, "isRegistered" | "registrationExpiresAt"> | null) {
+  if (!listing) return "Not set";
+  if (listing.isRegistered === false) return "Unregistered";
+  if (listing.isRegistered === true) {
+    return listing.registrationExpiresAt ? `Registered until ${listing.registrationExpiresAt.slice(0, 10)}` : "Registered";
+  }
+  return "Not set";
+}
+
 export function formatVehicleSpec(listing?: VehicleMarketplaceListing | null) {
   if (!listing) return "Vehicle";
   const model = [listing.brand, listing.model].filter(Boolean).join(" ");

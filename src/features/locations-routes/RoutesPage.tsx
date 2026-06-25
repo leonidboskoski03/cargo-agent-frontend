@@ -45,6 +45,7 @@ export function RoutesPage() {
   const user = useAuthStore((state) => state.user);
   const canManage = canManageCompanyPosts(user?.role);
   const [editing, setEditing] = useState<RouteRecord | null>(null);
+  const [createdRoutePreview, setCreatedRoutePreview] = useState<RouteRecord | null>(null);
   const [deleted, setDeleted] = useState<RouteRecord | null>(null);
   const [registryView, setRegistryView] = useState<"active" | "deleted">("active");
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
@@ -63,7 +64,7 @@ export function RoutesPage() {
   }, [editing, form]);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["routes"] });
-  const createMutation = useAppMutation({ messages: { success: "Route created" }, mutationFn: createRoute, onSuccess: () => { form.reset(routeDefaults); void refresh(); } });
+  const createMutation = useAppMutation({ messages: { success: "Route created" }, mutationFn: createRoute, onSuccess: (route) => { setCreatedRoutePreview(route); form.reset(routeDefaults); void refresh(); } });
   const updateMutation = useAppMutation({ messages: { success: "Route updated" }, mutationFn: (values: RouteFormValues) => updateRoute(editing?.id ?? "", values), onSuccess: () => { setEditing(null); void refresh(); } });
   const deleteMutation = useAppMutation({ messages: { success: "Route deleted" }, mutationFn: deleteRoute, onSuccess: (record) => { setDeleted(record); void refresh(); } });
   const restoreMutation = useAppMutation({ messages: { success: "Route restored" }, mutationFn: restoreRoute, onSuccess: () => { setDeleted(null); void refresh(); } });
@@ -80,6 +81,13 @@ export function RoutesPage() {
     if (!selectedOriginLocationId || !selectedDestinationLocationId || selectedOriginLocationId === selectedDestinationLocationId) return;
     estimateForSelection({ destinationLocationId: selectedDestinationLocationId, originLocationId: selectedOriginLocationId, vehicleProfile: "TRUCK" });
   }, [estimateForSelection, selectedDestinationLocationId, selectedOriginLocationId]);
+
+  useEffect(() => {
+    if (!createdRoutePreview) return;
+
+    const timeout = window.setTimeout(() => setCreatedRoutePreview(null), 5_000);
+    return () => window.clearTimeout(timeout);
+  }, [createdRoutePreview]);
 
   if (locationsQuery.isLoading || routesQuery.isLoading) return <LoadingState description="Loading route dependencies." title="Loading routes" />;
   if (locationsQuery.error || routesQuery.error) return <ErrorState description="Route data could not be loaded." error={locationsQuery.error ?? routesQuery.error} title="Unable to load routes" />;
@@ -170,6 +178,27 @@ export function RoutesPage() {
             <p className="mt-2 text-sm leading-6 text-muted">Drivers can inspect company route lanes without mutation controls.</p>
           </Surface>
         )}
+
+        <div className="space-y-4">
+        {createdRoutePreview ? (
+          <Surface className="p-4">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase text-muted">Created route preview</p>
+                <h2 className="mt-1 text-xl font-semibold tracking-normal">
+                  {locationLabel(createdRoutePreview.originLocation)} to {locationLabel(createdRoutePreview.destinationLocation)}
+                </h2>
+                <p className="mt-1 text-sm text-muted">This preview auto-hides after 5 seconds.</p>
+              </div>
+              <Tooltip label="Hide created route preview">
+                <Button aria-label="Hide created route preview" className="size-9 min-h-9 px-0" onClick={() => setCreatedRoutePreview(null)} type="button" variant="ghost">
+                  <X className="size-4" />
+                </Button>
+              </Tooltip>
+            </div>
+            <RouteConnectionMap className="h-[260px]" route={createdRoutePreview} />
+          </Surface>
+        ) : null}
 
         <Surface className="p-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -295,6 +324,7 @@ export function RoutesPage() {
             )}
           </div>
         </Surface>
+        </div>
       </div>
       {selectedRoute ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4" role="dialog" aria-modal="true" aria-labelledby="route-map-title">

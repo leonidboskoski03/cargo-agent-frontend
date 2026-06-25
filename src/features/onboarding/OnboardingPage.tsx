@@ -145,7 +145,7 @@ export function OnboardingPage() {
                     <p className="mt-1 text-sm leading-6 text-muted">{item.description}</p>
                   </div>
                 </div>
-                <Link className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground" to={item.to}>
+                <Link className="inline-flex min-h-9 w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground md:w-32" to={item.to}>
                   {complete ? "Review" : "Continue"}
                   <ArrowRight className="size-4" aria-hidden="true" />
                 </Link>

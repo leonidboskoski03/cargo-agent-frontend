@@ -152,6 +152,7 @@ export function CompanyPage() {
   }
 
   const completion = completionQuery.data;
+  const verificationStatus = company.verificationStatus ?? "UNVERIFIED";
 
   return (
     <div className="space-y-6">
@@ -189,7 +190,7 @@ export function CompanyPage() {
               <div>
                 <dt className="text-xs font-semibold uppercase text-muted">Verification</dt>
                 <dd className="mt-1 space-y-2">
-                  <StatusBadge tone={verificationTone(company.verificationStatus)}>{company.verificationStatus.replace("_", " ")}</StatusBadge>
+                  <StatusBadge tone={verificationTone(verificationStatus)}>{verificationStatus.replaceAll("_", " ")}</StatusBadge>
                   {company.verificationProvider ? (
                     <p className="text-xs leading-5 text-muted">
                       {company.verificationProvider}
@@ -202,7 +203,7 @@ export function CompanyPage() {
                   {isAdmin ? (
                     <Button
                       className="min-h-8 px-3 py-1.5 text-xs"
-                      disabled={verificationMutation.isPending || company.verificationStatus === "PENDING"}
+                      disabled={verificationMutation.isPending || verificationStatus === "PENDING"}
                       onClick={() => verificationMutation.mutate()}
                       type="button"
                       variant="secondary"

@@ -227,6 +227,35 @@ describe("routes page catalog and estimate UX", () => {
     expect(screen.getByLabelText(/duration minutes/i)).toHaveValue(92);
   });
 
+  it("shows a created route preview above the registry with zoom and hide controls", async () => {
+    locationsRoutesApi.createRoute.mockResolvedValue({
+      createdAt: "",
+      deletedAt: null,
+      destinationLocation: { city: "Bitola", countryCode: "MK", deletedAt: null, id: "loc_destination", lat: "41.0319000", lng: "21.3347000" },
+      destinationLocationId: "loc_destination",
+      distanceKm: 61,
+      estimatedDurationMinutes: 92,
+      id: "route_created",
+      isActive: true,
+      originLocation: { city: "Skopje", countryCode: "MK", deletedAt: null, id: "loc_origin", lat: "41.9973000", lng: "21.4280000" },
+      originLocationId: "loc_origin",
+      updatedAt: "",
+    });
+
+    renderRoutesPage();
+
+    await userEvent.selectOptions(await screen.findByLabelText(/origin/i), "loc_origin");
+    await userEvent.selectOptions(screen.getByLabelText(/destination/i), "loc_destination");
+    await waitFor(() => expect(screen.getByLabelText(/distance km/i)).toHaveValue(61));
+    await userEvent.click(screen.getByRole("button", { name: /add route/i }));
+
+    expect(await screen.findByText("Created route preview")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /zoom route map in/i }));
+    expect(screen.getByText("125%")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /hide created route preview/i }));
+    expect(screen.queryByText("Created route preview")).not.toBeInTheDocument();
+  });
+
   it("opens a route map on demand from the registry", async () => {
     locationsRoutesApi.listRoutes.mockResolvedValue([
       {

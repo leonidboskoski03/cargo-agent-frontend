@@ -11,7 +11,8 @@ import {
 } from "@/shared/api/modules/vehicleMarketplace";
 import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge } from "@/shared/components/ui/DataTable";
-import { Select } from "@/shared/components/ui/Form";
+import { FilterPopover } from "@/shared/components/ui/FilterPopover";
+import { Field, Select } from "@/shared/components/ui/Form";
 import { EmptyState, ErrorState, LoadingState, PageHeader } from "@/shared/components/ui/Page";
 import { Tooltip } from "@/shared/components/ui/Tooltip";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
@@ -36,8 +37,8 @@ function OwnerListingCard({ changeStatus, deletePending, listing, onDelete, onRe
   const images = listingImages(listing);
   const cover = images[0]?.url;
   return (
-    <article className="grid overflow-hidden rounded-xl border border-border bg-card shadow-sm lg:grid-cols-[16rem_1fr]">
-      <Link className="relative min-h-48 bg-surface-pearl" to={`/vehicle-marketplace/${listing.id}`}>
+    <article className="grid rounded-xl border border-border bg-card shadow-sm lg:grid-cols-[16rem_1fr]">
+      <Link className="relative min-h-48 overflow-hidden bg-surface-pearl" to={`/vehicle-marketplace/${listing.id}`}>
         {cover ? (
           <img alt={listing.title} className="absolute inset-0 size-full object-cover" src={cover} />
         ) : (
@@ -113,6 +114,8 @@ export function VehicleMarketplaceMinePage() {
   const queryClient = useQueryClient();
   const [billingResult, setBillingResult] = useState<MarketplaceBillingMetadata | null>(null);
   const [registryView, setRegistryView] = useState<"active" | "deleted">("active");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | (typeof ownerStatuses)[number]>("ALL");
+  const [draftStatusFilter, setDraftStatusFilter] = useState<"ALL" | (typeof ownerStatuses)[number]>("ALL");
   const query = useQuery({
     queryFn: () => listMyVehicleMarketplaceListings({ includeDeleted: true }),
     queryKey: ["vehicle-marketplace", "mine", "include-deleted"],
@@ -162,8 +165,15 @@ export function VehicleMarketplaceMinePage() {
   const listings = query.data ?? [];
   const activeListings = listings.filter((listing) => !listing.deletedAt);
   const deletedListings = listings.filter((listing) => listing.deletedAt);
-  const visibleListings = registryView === "deleted" ? deletedListings : activeListings;
+  const registryListings = registryView === "deleted" ? deletedListings : activeListings;
+  const visibleListings = statusFilter === "ALL" ? registryListings : registryListings.filter((listing) => listing.status === statusFilter);
   const isDeletedView = registryView === "deleted";
+  const activeFilterCount = statusFilter === "ALL" ? 0 : 1;
+  const applyFilters = () => setStatusFilter(draftStatusFilter);
+  const clearFilters = () => {
+    setDraftStatusFilter("ALL");
+    setStatusFilter("ALL");
+  };
 
   return (
     <div className="space-y-6">
@@ -176,30 +186,48 @@ export function VehicleMarketplaceMinePage() {
       {billingCopy ? (
         <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-foreground">{billingCopy}</div>
       ) : null}
-      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-sm font-semibold text-foreground">Listing registry</p>
           <p className="mt-1 text-sm text-muted">{isDeletedView ? "Deleted listings remain private until restored." : "Active listings include draft, published, paused, sold, rented, and closed records."}</p>
         </div>
-        <div className="inline-flex w-fit rounded-lg border border-border bg-surface-pearl p-1" aria-label="Vehicle listing registry view">
-          <Button
-            aria-pressed={!isDeletedView}
-            className="min-h-8 px-3 py-1 text-sm"
-            onClick={() => setRegistryView("active")}
-            type="button"
-            variant={!isDeletedView ? "secondary" : "ghost"}
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterPopover
+            activeCount={activeFilterCount}
+            description="Filter owned vehicle listings by publication state."
+            onApply={applyFilters}
+            onClear={clearFilters}
+            title="Owned listing filters"
           >
-            Active <span className="text-xs text-muted">{activeListings.length}</span>
-          </Button>
-          <Button
-            aria-pressed={isDeletedView}
-            className="min-h-8 px-3 py-1 text-sm"
-            onClick={() => setRegistryView("deleted")}
-            type="button"
-            variant={isDeletedView ? "secondary" : "ghost"}
-          >
-            Deleted <span className="text-xs text-muted">{deletedListings.length}</span>
-          </Button>
+            <section className="max-w-sm">
+              <Field label="Status">
+                <Select onChange={(event) => setDraftStatusFilter(event.target.value as typeof draftStatusFilter)} value={draftStatusFilter}>
+                  <option value="ALL">All statuses</option>
+                  {ownerStatuses.map((status) => <option key={status} value={status}>{humanizeEnum(status)}</option>)}
+                </Select>
+              </Field>
+            </section>
+          </FilterPopover>
+          <div className="inline-flex w-fit rounded-lg border border-border bg-surface-pearl p-1" aria-label="Vehicle listing registry view">
+            <Button
+              aria-pressed={!isDeletedView}
+              className="min-h-8 px-3 py-1 text-sm"
+              onClick={() => setRegistryView("active")}
+              type="button"
+              variant={!isDeletedView ? "secondary" : "ghost"}
+            >
+              Active <span className="text-xs text-muted">{activeListings.length}</span>
+            </Button>
+            <Button
+              aria-pressed={isDeletedView}
+              className="min-h-8 px-3 py-1 text-sm"
+              onClick={() => setRegistryView("deleted")}
+              type="button"
+              variant={isDeletedView ? "secondary" : "ghost"}
+            >
+              Deleted <span className="text-xs text-muted">{deletedListings.length}</span>
+            </Button>
+          </div>
         </div>
       </div>
       {visibleListings.length === 0 ? (

@@ -29,6 +29,8 @@ export type VehicleMarketplaceListing = {
   ownerUser?: { firstName?: string | null; id: string; lastName?: string | null; role?: string } | null;
   ownerUserId?: string | null;
   priceAmount?: number | string | null;
+  isRegistered?: boolean | null;
+  registrationExpiresAt?: string | null;
   refrigerated?: boolean | null;
   sourceType: VehicleMarketplaceSourceType;
   status: VehicleMarketplaceListingStatus;
@@ -58,6 +60,17 @@ export type VehicleMarketplaceInquiry = {
   updatedAt: string;
 };
 
+export type VehicleMarketplaceInquiryReply = {
+  authorCompanyId?: string | null;
+  authorUserId: string;
+  createdAt: string;
+  deletedAt?: string | null;
+  id: string;
+  inquiryId: string;
+  message: string;
+  updatedAt: string;
+};
+
 export type VehicleMarketplaceFilters = {
   bodyType?: string;
   brand?: string;
@@ -65,7 +78,7 @@ export type VehicleMarketplaceFilters = {
   capacityMin?: number;
   city?: string;
   countryCode?: string;
-  currency?: string;
+  currency?: string | null;
   hazmatCertified?: boolean;
   includeDeleted?: boolean;
   intent?: string;
@@ -89,14 +102,16 @@ export type VehicleMarketplaceListingInput = {
   capacityKg?: number;
   city: string;
   countryCode: string;
-  currency?: string;
+  currency?: string | null;
   description?: string;
   documentsJson?: unknown;
   hazmatCertified?: boolean;
   imageUrlsJson?: unknown;
   intent: VehicleMarketplaceIntent;
   model?: string;
-  priceAmount?: number | string;
+  priceAmount?: number | string | null;
+  isRegistered?: boolean | null;
+  registrationExpiresAt?: string | null;
   refrigerated?: boolean;
   sourceType: VehicleMarketplaceSourceType;
   status?: VehicleMarketplaceListingStatus;
@@ -152,4 +167,12 @@ export function listVehicleMarketplaceInquiries(params?: { page?: number; pageSi
 
 export function updateVehicleMarketplaceInquiry(inquiryId: string, status: VehicleMarketplaceInquiryStatus) {
   return unwrapData<VehicleMarketplaceInquiry>(apiClient.patch(`/vehicle-marketplace/inquiries/${inquiryId}`, { status }));
+}
+
+export function listVehicleMarketplaceInquiryReplies(inquiryId: string) {
+  return unwrapData<VehicleMarketplaceInquiryReply[]>(apiClient.get(`/vehicle-marketplace/inquiries/${inquiryId}/replies`));
+}
+
+export function createVehicleMarketplaceInquiryReply(inquiryId: string, input: { message: string }) {
+  return unwrapData<VehicleMarketplaceInquiryReply>(apiClient.post(`/vehicle-marketplace/inquiries/${inquiryId}/replies`, input));
 }

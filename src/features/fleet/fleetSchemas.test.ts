@@ -6,17 +6,17 @@ describe("fleet schemas", () => {
     expect(vehicleSchema.safeParse({ countryOfRegistration: "M", plateNumber: "A", vehicleType: "TRUCK" }).success).toBe(false);
 
     const result = vehicleSchema.safeParse({
-      capacityKg: "12000",
+      brand: "MAN",
       countryOfRegistration: "mk",
       plateNumber: "SK-100",
       vehicleType: "TRUCK",
-      volumeM3: "38.5",
+      year: "2024",
     });
 
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.countryOfRegistration).toBe("MK");
-      expect(result.data.capacityKg).toBe(12000);
+      expect(result.data.year).toBe(2024);
     }
   });
 

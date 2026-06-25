@@ -6,8 +6,10 @@ import { toast } from "sonner";
 import {
   changeBidStatus,
   boostBid,
+  createBidReply,
   deleteBid,
   listBidActivities,
+  listBidReplies,
   listBids,
   restoreBid,
   updateBid,
@@ -20,6 +22,7 @@ import { Button } from "@/shared/components/ui/Button";
 import { StatusBadge, Table, Td, Th } from "@/shared/components/ui/DataTable";
 import { Field, Input, Select, Textarea } from "@/shared/components/ui/Form";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Surface } from "@/shared/components/ui/Page";
+import { WorkflowReplyThread } from "@/shared/components/ui/WorkflowReplyThread";
 import { useAppMutation } from "@/shared/hooks/useAppMutation";
 import { humanizeEnum } from "@/shared/lib/formatters";
 import { useAuthStore } from "@/features/auth/authStore";
@@ -128,6 +131,11 @@ export function BidsPage() {
     queryFn: () => listBidActivities(selectedBid?.id ?? ""),
     queryKey: ["bids", selectedBid?.id, "activities"],
   });
+  const repliesQuery = useQuery({
+    enabled: Boolean(selectedBid),
+    queryFn: () => listBidReplies(selectedBid?.id ?? ""),
+    queryKey: ["bids", selectedBid?.id, "replies"],
+  });
   const bids = useMemo(
     () => (bidsQuery.data ?? []).filter((bid) => bidMatchesSearch(bid, search, user?.companyId)),
     [bidsQuery.data, search, user?.companyId],
@@ -205,6 +213,12 @@ export function BidsPage() {
     messages: { success: "Bid restored" },
     mutationFn: restoreBid,
     onSuccess: refresh,
+  });
+
+  const replyMutation = useAppMutation({
+    messages: { success: "Reply sent" },
+    mutationFn: (message: string) => createBidReply(selectedBid?.id ?? "", { message }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["bids", selectedBid?.id, "replies"] }),
   });
 
   if (bidsQuery.isLoading) return <LoadingState description="Loading received and sent bid work queues." title="Loading bids" />;
@@ -519,6 +533,19 @@ export function BidsPage() {
                   </dl>
                 </Surface>
               </div>
+
+              <Surface className="mt-5 p-4">
+                <WorkflowReplyThread
+                  currentCompanyId={user?.companyId}
+                  currentUserId={user?.id}
+                  error={repliesQuery.error}
+                  isLoading={repliesQuery.isLoading}
+                  isSending={replyMutation.isPending}
+                  onSend={(message) => replyMutation.mutate(message)}
+                  replies={repliesQuery.data}
+                  title="Bid replies"
+                />
+              </Surface>
 
               <Surface className="mt-5 p-4">
                 <h3 className="font-semibold">Activity timeline</h3>

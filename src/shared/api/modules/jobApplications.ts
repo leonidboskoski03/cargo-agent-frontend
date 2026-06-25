@@ -71,6 +71,17 @@ export type JobApplicationSubmissionRecord = {
   updatedAt: string;
 };
 
+export type JobApplicationSubmissionReply = {
+  authorCompanyId?: string | null;
+  authorUserId: string;
+  createdAt: string;
+  deletedAt?: string | null;
+  id: string;
+  message: string;
+  submissionId: string;
+  updatedAt: string;
+};
+
 export type CreateJobApplicationInput = {
   currency?: string;
   description?: string;
@@ -136,4 +147,12 @@ export function promoteJobApplicationSubmission(jobApplicationId: string, submis
 
 export function listJobApplicationSubmissions(jobApplicationId: string) {
   return unwrapData<JobApplicationSubmissionRecord[]>(apiClient.get(`/job-applications/${jobApplicationId}/submissions`));
+}
+
+export function listJobApplicationSubmissionReplies(submissionId: string) {
+  return unwrapData<JobApplicationSubmissionReply[]>(apiClient.get(`/job-applications/submissions/${submissionId}/replies`));
+}
+
+export function createJobApplicationSubmissionReply(submissionId: string, input: { message: string }) {
+  return unwrapData<JobApplicationSubmissionReply>(apiClient.post(`/job-applications/submissions/${submissionId}/replies`, input));
 }
